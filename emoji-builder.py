@@ -1,8 +1,23 @@
 #!/usr/bin/python
+#
+# Copyright 2012 Google, Inc.
+# Written by Behdad Esfahbod <behdad@google.com>
+#
 
 import sys, glob, re, os, struct
 import cairo
 from fontTools import ttx, ttLib
+
+if len (sys.argv) != 5:
+	print >>sys.stderr, "Usage: emjoi-builder.py img-dir/ strike-size font.ttf out-font.ttf"
+	print >>sys.stderr, "\nIn the image dir you should have files named like 1F4A9.png."
+	sys.exit (1)
+
+img_dir = sys.argv[1]
+strike_size = int (sys.argv[2])
+font_file = sys.argv[3]
+out_file = sys.argv[4]
+
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format1 (img, stream):
@@ -32,11 +47,6 @@ def encode_ebdt_format1 (img, stream):
 	#for y in range (height):
 	#	for x in range (width):
 	#		stream.extend (data[y * stride + x * 4 + 2])
-
-
-img_dir = sys.argv[1]
-font_file = sys.argv[2]
-out_file = sys.argv[3]
 
 
 img_files = {}
@@ -173,7 +183,7 @@ def encode_bitmapSizeTable (offsets, x_ppem, y_ppem, stream):
 
 eblc = bytearray (struct.pack (">L", 0x00020000))
 eblc.extend (struct.pack(">L", 1)) # ULONG numSizes
-encode_bitmapSizeTable (bitmap_offsets, 20, 20, eblc)
+encode_bitmapSizeTable (bitmap_offsets, strike_size, strike_size, eblc)
 print "EBLC table synthesized: %d bytes." % len (eblc)
 
 def add_table (font, tag, data):
