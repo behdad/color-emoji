@@ -181,8 +181,8 @@ def add_table (font, tag, data):
 	tab.data = str(data)
 	font[tag] = tab
 
-add_table (font, 'EBDT', ebdt)
-add_table (font, 'EBLC', eblc)
+add_table (font, 'CBDT', ebdt)
+add_table (font, 'CBLC', eblc)
 
 font.save (out_file)
 print "Output font '%s' generated." % out_file
