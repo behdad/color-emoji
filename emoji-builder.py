@@ -28,9 +28,10 @@ def encode_ebdt_format1 (img, stream):
 	stream.extend ([height, width, 0, height, width])
 
 	# FIXME Handle endian-ness
-	for y in range (height):
-		for x in range (width):
-			stream.extend (data[y * stride + x * 4 + 2])
+	stream.extend (data)
+	#for y in range (height):
+	#	for x in range (width):
+	#		stream.extend (data[y * stride + x * 4 + 2])
 
 
 img_dir = sys.argv[1]
@@ -163,7 +164,7 @@ def encode_bitmapSizeTable (offsets, x_ppem, y_ppem, stream):
 	# BYTE	ppemY	vertical pixels per Em
 	stream.extend (struct.pack(">B", y_ppem))
 	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the following bitDepth values, as described below: 1, 2, 4, and 8.
-	stream.extend (struct.pack(">B", 8)) # XXX
+	stream.extend (struct.pack(">B", 32)) # XXX
 	# CHAR	flags	vertical or horizontal (see bitmapFlags)
 	stream.extend (struct.pack(">b", 0x01))
 
