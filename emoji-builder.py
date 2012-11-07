@@ -8,10 +8,20 @@ import sys, glob, re, os, struct
 import cairo
 from fontTools import ttx, ttLib
 
-if len (sys.argv) != 5:
-	print >>sys.stderr, "Usage: emjoi-builder.py img-dir/ strike-size font.ttf out-font.ttf"
-	print >>sys.stderr, "\nIn the image dir you should have files named like 1F4A9.png."
+if len (sys.argv) not in [5, 6]:
+	print >>sys.stderr, """
+Usage: emjoi-builder.py [-d] img-dir/ strike-size font.ttf out-font.ttf
+
+In the image dir you should have files named like 1F4A9.png.
+
+If the -d parameter is given, the 'glyf' table is dropped from the font.
+"""
 	sys.exit (1)
+
+drop_glyf = False
+if "-d" in sys.argv:
+	drop_glyf = True
+	sys.argv.remove ("-d")
 
 img_dir = sys.argv[1]
 strike_size = int (sys.argv[2])
@@ -193,6 +203,10 @@ def add_table (font, tag, data):
 
 add_table (font, 'CBDT', ebdt)
 add_table (font, 'CBLC', eblc)
+
+if drop_glyf:
+	del font['glyf']
+	print "Dropped 'glyf' table."
 
 font.save (out_file)
 print "Output font '%s' generated." % out_file
