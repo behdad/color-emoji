@@ -10,9 +10,14 @@ from fontTools import ttx, ttLib
 
 if len (sys.argv) not in [5, 6]:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] img-dir/ strike-size font.ttf out-font.ttf
+Usage: emjoi-builder.py [-d] img-prefix strike-size font.ttf out-font.ttf
 
-In the image dir you should have files named like 1F4A9.png.
+This will search for files that have img-prefix followed by a hex number,
+and end in ".png".  For example, if img-prefix is "icons/", then files
+with names like "icons/1f4A9.png" will be loaded.
+
+The script then embeds color bitmaps in the font, for characters that the
+font already supports, and writes the new font out.
 
 If the -d parameter is given, the 'glyf' table is dropped from the font.
 """
@@ -23,7 +28,7 @@ if "-d" in sys.argv:
 	drop_glyf = True
 	sys.argv.remove ("-d")
 
-img_dir = sys.argv[1]
+img_prefix = sys.argv[1]
 strike_size = int (sys.argv[2])
 font_file = sys.argv[3]
 out_file = sys.argv[4]
@@ -60,12 +65,12 @@ def encode_ebdt_format1 (img, stream):
 
 
 img_files = {}
-for img_file in glob.glob (os.path.join (img_dir, "*.png")):
-	uchar = int (os.path.basename (img_file)[:-4], 16)
+for img_file in glob.glob ("%s*.png" % img_prefix):
+	uchar = int (img_file[len (img_prefix):-4], 16)
 	img_files[uchar] = img_file
 if not img_files:
-	raise Exception ("No image files found: '%s/*.png'" % img_dir)
-print "Found images for %d characters in '%s'." % (len (img_files), img_dir)
+	raise Exception ("No image files found: '%s*.png'" % img_prefix)
+print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
 
 font = ttx.TTFont (font_file)
 print "Loaded font '%s'." % font_file
