@@ -39,6 +39,18 @@ height = int (sys.argv[4])
 font_file = sys.argv[5]
 out_file = sys.argv[6]
 
+def encode_smallGlyphMetrics (width, height,
+			      x_bearing, y_bearing,
+			      advance,
+			      stream):
+	# smallGlyphMetrics
+	# Type	Name
+	# BYTE	height
+	# BYTE	width
+	# CHAR	BearingX
+	# CHAR	BearingY
+	# BYTE	Advance
+	stream.extend ([height, width, x_bearing, y_bearing, advance])
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format1 (img, stream):
@@ -54,14 +66,7 @@ def encode_ebdt_format1 (img, stream):
 	if stride != width * 4:
 		raise "Code assumes packed lines, but data is not packed.  Fixme."
 
-	# smallGlyphMetrics
-	# Type	Name
-	# BYTE	height
-	# BYTE	width
-	# CHAR	BearingX
-	# CHAR	BearingY
-	# BYTE	Advance
-	stream.extend ([height, width, 0, height, width])
+	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
 
 	# FIXME Handle endian-ness
 	stream.extend (data)
@@ -72,14 +77,7 @@ def encode_ebdt_format1 (img, stream):
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (png_stream, png_length, stream, width, height):
 
-	# smallGlyphMetrics
-	# Type	Name
-	# BYTE	height
-	# BYTE	width
-	# CHAR	BearingX
-	# CHAR	BearingY
-	# BYTE	Advance
-	stream.extend ([height, width, 0, height, width])
+	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
 
 	# ULONG data length
 	stream.extend (struct.pack(">L", png_length))
