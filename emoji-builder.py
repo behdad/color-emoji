@@ -62,23 +62,29 @@ def encode_ebdt_format1 (img_file, stream):
 	img = cairo.ImageSurface.create_from_png (img_file)
 
 	if img.get_format () != cairo.FORMAT_ARGB32:
-		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
+		raise Exception ("Expected FORMAT_ARGB32, but image has format %d" % img.get_format ())
 
 	width = img.get_width ()
 	height = img.get_height ()
 	stride = img.get_stride ()
 	data = img.get_data ()
 
-	if stride != width * 4:
-		raise "Code assumes packed lines, but data is not packed.  Fixme."
-
 	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
 
-	# FIXME Handle endian-ness
-	stream.extend (data)
-	#for y in range (height):
-	#	for x in range (width):
-	#		stream.extend (data[y * stride + x * 4 + 2])
+	if sys.byteorder == "little" and stride == width * 4:
+		# Sweet.  Data is in desired format, ship it!
+		stream.extend (data)
+		return
+
+	# Unexpected stride or endianness, do it the slow way
+	offset = 0
+	for y in range (height):
+		for x in range (width):
+			pixel = data[offset + 4 * x: offset + 4 * (x + 1)]
+			# Convert to little endian
+			pixel = struct.pack ("<I", struct.unpack ("@I", pixel)[0])
+			stream.extend (pixel)
+		offset += stride
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file, stream):
