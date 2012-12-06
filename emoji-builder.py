@@ -2,19 +2,23 @@
 #
 # Copyright 2012 Google, Inc.
 # Written by Behdad Esfahbod <behdad@google.com>
+# Modified by Stuart Gill <stuartg@google.com>
 #
 
-import sys, glob, re, os, struct
-import cairo
+import sys, glob, re, os, struct, io
 from fontTools import ttx, ttLib
 
-if len (sys.argv) not in [5, 6]:
+if len (sys.argv) not in [7, 8]:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] img-prefix strike-size font.ttf out-font.ttf
+Usage: emjoi-builder.py [-d] img-prefix strike-size width height font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
 with names like "icons/1f4A9.png" will be loaded.
+
+strike-size is the point size to record for the images in the font
+
+width, height are respectively the actual pixel sizes of the PNG when fully rendered
 
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
@@ -30,15 +34,17 @@ if "-d" in sys.argv:
 
 img_prefix = sys.argv[1]
 strike_size = int (sys.argv[2])
-font_file = sys.argv[3]
-out_file = sys.argv[4]
+width = int (sys.argv[3])
+height = int (sys.argv[4])
+font_file = sys.argv[5]
+out_file = sys.argv[6]
 
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format1 (img, stream):
 
-	if img.get_format () != cairo.FORMAT_ARGB32:
-		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
+#	if img.get_format () != cairo.FORMAT_ARGB32:
+#		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
 
 	width = img.get_width ()
 	height = img.get_height ()
@@ -62,6 +68,24 @@ def encode_ebdt_format1 (img, stream):
 	#for y in range (height):
 	#	for x in range (width):
 	#		stream.extend (data[y * stride + x * 4 + 2])
+
+# http://www.microsoft.com/typography/otspec/ebdt.htm
+def encode_ebdt_format17 (png_stream, png_length, stream, width, height):
+
+	# smallGlyphMetrics
+	# Type	Name
+	# BYTE	height
+	# BYTE	width
+	# CHAR	BearingX
+	# CHAR	BearingY
+	# BYTE	Advance
+	stream.extend ([height, width, 0, height, width])
+
+	# ULONG data length
+	stream.extend (struct.pack(">L", png_length))
+
+	png_array = bytearray(png_stream.read())
+	stream.extend (png_array)
 
 
 img_files = {}
@@ -95,9 +119,12 @@ for glyph in glyphs:
 	img_file = glyph_imgs[glyph]
 	#print "Embedding %s for glyph #%d" % (img_file, glyph)
 	sys.stdout.write ('.')
-	img = cairo.ImageSurface.create_from_png (img_file)
+	# img = cairo.ImageSurface.create_from_png (img_file)
+	img_length = os.path.getsize(img_file)
+	img_stream = io.open(img_file, 'rb')
 	offset = len (ebdt)
-	encode_ebdt_format1 (img, ebdt)
+#	encode_ebdt_format1 (img, ebdt)
+	encode_ebdt_format17 (img_stream, img_length, ebdt, width, height)
 	bitmap_offsets.append ((glyph, offset))
 print
 print "EBDT table synthesized: %d bytes." % len (ebdt)
@@ -105,7 +132,7 @@ print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 def encode_indexSubTable1 (offsets, stream):
 	stream.extend (struct.pack(">H", 1)) # USHORT indexFormat
-	stream.extend (struct.pack(">H", 1)) # USHORT imageFormat
+	stream.extend (struct.pack(">H", 17)) # USHORT imageFormat
 	imageDataOffset = offsets[0][1]
 	stream.extend (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
 	for gid, offset in offsets:
