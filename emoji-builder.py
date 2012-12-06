@@ -5,20 +5,18 @@
 # Modified by Stuart Gill <stuartg@google.com>
 #
 
-import sys, glob, re, os, struct, io
+import sys, glob, re, os, struct, io, cairo
 from fontTools import ttx, ttLib
 
-if len (sys.argv) not in [7, 8]:
+if len (sys.argv) not in [5, 6]:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] img-prefix strike-size width height font.ttf out-font.ttf
+Usage: emjoi-builder.py [-d] img-prefix strike-size font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
 with names like "icons/1f4A9.png" will be loaded.
 
 strike-size is the point size to record for the images in the font
-
-width, height are respectively the actual pixel sizes of the PNG when fully rendered
 
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
@@ -34,10 +32,8 @@ if "-d" in sys.argv:
 
 img_prefix = sys.argv[1]
 strike_size = int (sys.argv[2])
-width = int (sys.argv[3])
-height = int (sys.argv[4])
-font_file = sys.argv[5]
-out_file = sys.argv[6]
+font_file = sys.argv[3]
+out_file = sys.argv[4]
 
 def encode_smallGlyphMetrics (width, height,
 			      x_bearing, y_bearing,
@@ -53,7 +49,9 @@ def encode_smallGlyphMetrics (width, height,
 	stream.extend ([height, width, x_bearing, y_bearing, advance])
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format1 (img, stream):
+def encode_ebdt_format1 (img_file, stream):
+
+	img = cairo.ImageSurface.create_from_png (img_file)
 
 	if img.get_format () != cairo.FORMAT_ARGB32:
 		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
@@ -75,15 +73,20 @@ def encode_ebdt_format1 (img, stream):
 	#		stream.extend (data[y * stride + x * 4 + 2])
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format17 (png_stream, png_length, stream, width, height):
+def encode_ebdt_format17 (img_file, stream):
+
+	img = cairo.ImageSurface.create_from_png (img_file)
+
+	width = img.get_width ()
+	height = img.get_height ()
+
+	png = bytearray (open (img_file, 'rb').read ())
 
 	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
 
 	# ULONG data length
-	stream.extend (struct.pack(">L", png_length))
-
-	png_array = bytearray(png_stream.read())
-	stream.extend (png_array)
+	stream.extend (struct.pack(">L", len (png)))
+	stream.extend (png)
 
 
 img_files = {}
@@ -117,12 +120,9 @@ for glyph in glyphs:
 	img_file = glyph_imgs[glyph]
 	#print "Embedding %s for glyph #%d" % (img_file, glyph)
 	sys.stdout.write ('.')
-	# img = cairo.ImageSurface.create_from_png (img_file)
-	img_length = os.path.getsize(img_file)
-	img_stream = io.open(img_file, 'rb')
 	offset = len (ebdt)
-#	encode_ebdt_format1 (img, ebdt)
-	encode_ebdt_format17 (img_stream, img_length, ebdt, width, height)
+#	encode_ebdt_format1 (img_file, ebdt)
+	encode_ebdt_format17 (img_file, ebdt)
 	bitmap_offsets.append ((glyph, offset))
 print
 print "EBDT table synthesized: %d bytes." % len (ebdt)
