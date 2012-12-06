@@ -8,9 +8,19 @@
 import sys, glob, re, os, struct, io, cairo
 from fontTools import ttx, ttLib
 
-if len (sys.argv) not in [5, 6]:
+drop_glyf = False
+if "-d" in sys.argv:
+	drop_glyf = True
+	sys.argv.remove ("-d")
+
+uncompressed = False
+if "-u" in sys.argv:
+	uncompressed = True
+	sys.argv.remove ("-u")
+
+if len (sys.argv) != 5:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] img-prefix strike-size font.ttf out-font.ttf
+Usage: emjoi-builder.py [-d] [-u] img-prefix strike-size font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
@@ -21,14 +31,12 @@ strike-size is the point size to record for the images in the font
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
 
+If the -u parameter is given, uncompressed images are stored (imageFormat=1).
+Otherwise, PNG images are stored (imageFormat=17).
+
 If the -d parameter is given, the 'glyf' table is dropped from the font.
 """
 	sys.exit (1)
-
-drop_glyf = False
-if "-d" in sys.argv:
-	drop_glyf = True
-	sys.argv.remove ("-d")
 
 img_prefix = sys.argv[1]
 strike_size = int (sys.argv[2])
@@ -88,6 +96,11 @@ def encode_ebdt_format17 (img_file, stream):
 	stream.extend (struct.pack(">L", len (png)))
 	stream.extend (png)
 
+encode_ebdt_image_funcs = {
+	1  : encode_ebdt_format1,
+	17 : encode_ebdt_format17,
+}
+
 
 img_files = {}
 for img_file in glob.glob ("%s*.png" % img_prefix):
@@ -116,21 +129,23 @@ print "Embedding images for %d glyphs." % len (glyphs)
 
 ebdt = bytearray (struct.pack (">L", 0x00020000))
 bitmap_offsets = []
+image_format = 1 if uncompressed else 17
+
+encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
 for glyph in glyphs:
 	img_file = glyph_imgs[glyph]
 	#print "Embedding %s for glyph #%d" % (img_file, glyph)
 	sys.stdout.write ('.')
 	offset = len (ebdt)
-#	encode_ebdt_format1 (img_file, ebdt)
-	encode_ebdt_format17 (img_file, ebdt)
+	encode_ebdt_image_func (img_file, ebdt)
 	bitmap_offsets.append ((glyph, offset))
 print
 print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 
-def encode_indexSubTable1 (offsets, stream):
+def encode_indexSubTable1 (offsets, image_format, stream):
 	stream.extend (struct.pack(">H", 1)) # USHORT indexFormat
-	stream.extend (struct.pack(">H", 17)) # USHORT imageFormat
+	stream.extend (struct.pack(">H", image_format)) # USHORT imageFormat
 	imageDataOffset = offsets[0][1]
 	stream.extend (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
 	for gid, offset in offsets:
@@ -158,7 +173,7 @@ def encode_sbitLineMetrics_vert (stream, x_ppem, y_ppem):
 	encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem) # XXX
 
 
-def encode_bitmapSizeTable (offsets, x_ppem, y_ppem, stream):
+def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	# count number of ranges
 	count = 1
 	start = offsets[0][0]
@@ -178,14 +193,14 @@ def encode_bitmapSizeTable (offsets, x_ppem, y_ppem, stream):
 	for gid, offset in offsets[1:]:
 		if last + 1 != gid:
 			headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-			encode_indexSubTable1 (offsets[start_id:last_id+1], subtables)
+			encode_indexSubTable1 (offsets[start_id:last_id+1], image_format, subtables)
 
 			start = gid
 			start_id = last_id + 1
 		last = gid
 		last_id += 1
 	headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-	encode_indexSubTable1 (offsets[start_id:last_id+1], subtables)
+	encode_indexSubTable1 (offsets[start_id:last_id+1], image_format, subtables)
 
 	indexTablesSize = len (headers) + len (subtables)
 	numberOfIndexSubTables = count
@@ -223,7 +238,7 @@ def encode_bitmapSizeTable (offsets, x_ppem, y_ppem, stream):
 
 eblc = bytearray (struct.pack (">L", 0x00020000))
 eblc.extend (struct.pack(">L", 1)) # ULONG numSizes
-encode_bitmapSizeTable (bitmap_offsets, strike_size, strike_size, eblc)
+encode_bitmapSizeTable (bitmap_offsets, image_format, strike_size, strike_size, eblc)
 print "EBLC table synthesized: %d bytes." % len (eblc)
 
 def add_table (font, tag, data):
