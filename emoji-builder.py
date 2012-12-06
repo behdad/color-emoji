@@ -55,8 +55,8 @@ def encode_smallGlyphMetrics (width, height,
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format1 (img, stream):
 
-#	if img.get_format () != cairo.FORMAT_ARGB32:
-#		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
+	if img.get_format () != cairo.FORMAT_ARGB32:
+		raise "Expected FORMAT_ARGB32, but image has format %d" % img.get_format ()
 
 	width = img.get_width ()
 	height = img.get_height ()
