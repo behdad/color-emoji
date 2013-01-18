@@ -46,7 +46,8 @@ font already supports, and writes the new font out.
 If the -u parameter is given, uncompressed images are stored (imageFormat=1).
 Otherwise, PNG images are stored (imageFormat=17).
 
-If the -d parameter is given, the 'glyf' table is dropped from the font.
+If the -d parameter is given, the 'glyf', 'CFF ',  and related tables are
+dropped from the font.
 """
 	sys.exit (1)
 
@@ -268,8 +269,12 @@ add_table (font, 'CBDT', ebdt)
 add_table (font, 'CBLC', eblc)
 
 if drop_glyf:
-	del font['glyf']
-	print "Dropped 'glyf' table."
+	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
+		try:
+			del font[tag]
+		except KeyError:
+			pass
+	print "Dropped 'glyf', 'CFF ', and related tables."
 
 font.save (out_file)
 print "Output font '%s' generated." % out_file
