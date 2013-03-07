@@ -67,7 +67,7 @@ def encode_smallGlyphMetrics (width, height,
 	# CHAR	BearingX
 	# CHAR	BearingY
 	# BYTE	Advance
-	stream.extend ([height, width, x_bearing, y_bearing, advance])
+	stream.extend (struct.pack ("BBbbB", height, width, x_bearing, y_bearing, advance))
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format1 (img_file, stream):
