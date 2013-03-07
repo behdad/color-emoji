@@ -186,7 +186,7 @@ def encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem):
 	# CHAR	minAfterBL
 	# CHAR	pad1
 	# CHAR	pad2
-	stream.extend (struct.pack ("bbBbbbbbbbbb", x_ppem, 0, y_ppem, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+	stream.extend (struct.pack ("bbBbbbbbbbbb", y_ppem, 0, x_ppem, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 def encode_sbitLineMetrics_vert (stream, x_ppem, y_ppem):
 	encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem) # XXX
