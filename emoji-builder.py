@@ -158,6 +158,7 @@ for glyph in glyphs:
 	offset = len (ebdt)
 	encode_ebdt_image_func (img_file, ebdt)
 	bitmap_offsets.append ((glyph, offset))
+bitmap_offsets.append ((None, len (ebdt)))
 print
 print "EBDT table synthesized: %d bytes." % len (ebdt)
 
@@ -167,11 +168,9 @@ def encode_indexSubTable1 (offsets, image_format, stream):
 	stream.extend (struct.pack(">H", image_format)) # USHORT imageFormat
 	imageDataOffset = offsets[0][1]
 	stream.extend (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
-	for gid, offset in offsets:
+	for gid, offset in offsets[:-1]:
 		stream.extend (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
-	# XXX I believe we should add offset to after last glyph; but FreeType
-	# seems to be ignoring this value, so just put zero.
-	stream.extend (struct.pack(">L", 0))
+	stream.extend (struct.pack(">L", offsets[-1][1]))
 
 def encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem):
 	# sbitLineMetrics
@@ -200,7 +199,7 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	count = 1
 	start = offsets[0][0]
 	last = start
-	for gid, offset in offsets[1:]:
+	for gid, offset in offsets[1:-1]:
 		if last + 1 != gid:
 			count += 1
 		last = gid
@@ -212,17 +211,17 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	start_id = 0
 	last = start
 	last_id = 0
-	for gid, offset in offsets[1:]:
+	for gid, offset in offsets[1:-1]:
 		if last + 1 != gid:
 			headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-			encode_indexSubTable1 (offsets[start_id:last_id+1], image_format, subtables)
+			encode_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
 
 			start = gid
 			start_id = last_id + 1
 		last = gid
 		last_id += 1
 	headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-	encode_indexSubTable1 (offsets[start_id:last_id+1], image_format, subtables)
+	encode_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
 
 	indexTablesSize = len (headers) + len (subtables)
 	numberOfIndexSubTables = count
@@ -245,7 +244,7 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	# USHORT	startGlyphIndex	lowest glyph index for this size
 	stream.extend (struct.pack(">H", offsets[0][0]))
 	# USHORT	endGlyphIndex	highest glyph index for this size
-	stream.extend (struct.pack(">H", offsets[-1][0]))
+	stream.extend (struct.pack(">H", offsets[-2][0]))
 	# BYTE	ppemX	horizontal pixels per Em
 	stream.extend (struct.pack(">B", x_ppem))
 	# BYTE	ppemY	vertical pixels per Em
