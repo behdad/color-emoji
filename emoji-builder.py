@@ -99,7 +99,7 @@ def encode_ebdt_format1 (img_file, stream):
 			stream.extend (pixel)
 		offset += stride
 
-# http://www.microsoft.com/typography/otspec/ebdt.htm
+# XXX http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file, stream):
 
 	img = cairo.ImageSurface.create_from_png (img_file)
@@ -169,7 +169,9 @@ def encode_indexSubTable1 (offsets, image_format, stream):
 	stream.extend (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
 	for gid, offset in offsets:
 		stream.extend (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
-	stream.extend (struct.pack(">L", 0)) # XXX see spec!
+	# XXX I believe we should add offset to after last glyph; but FreeType
+	# seems to be ignoring this value, so just put zero.
+	stream.extend (struct.pack(">L", 0))
 
 def encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem):
 	# sbitLineMetrics
@@ -192,6 +194,7 @@ def encode_sbitLineMetrics_vert (stream, x_ppem, y_ppem):
 	encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem) # XXX
 
 
+# http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	# count number of ranges
 	count = 1
@@ -248,7 +251,7 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	# BYTE	ppemY	vertical pixels per Em
 	stream.extend (struct.pack(">B", y_ppem))
 	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the following bitDepth values, as described below: 1, 2, 4, and 8.
-	stream.extend (struct.pack(">B", 32)) # XXX
+	stream.extend (struct.pack(">B", 32))
 	# CHAR	flags	vertical or horizontal (see bitmapFlags)
 	stream.extend (struct.pack(">b", 0x01))
 
