@@ -30,15 +30,14 @@ if "-u" in sys.argv:
 	uncompressed = True
 	sys.argv.remove ("-u")
 
-if len (sys.argv) != 5:
+if len (sys.argv) != 4:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] [-u] img-prefix strike-size font.ttf out-font.ttf
+Usage: emjoi-builder.py [-d] [-u] img-prefix font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
-with names like "icons/1f4A9.png" will be loaded.
-
-strike-size is the point size to record for the images in the font
+with names like "icons/1f4A9.png" will be loaded.  All images must have
+the same size (preferably square).
 
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
@@ -52,14 +51,17 @@ dropped from the font.
 	sys.exit (1)
 
 img_prefix = sys.argv[1]
-strike_size = int (sys.argv[2])
-font_file = sys.argv[3]
-out_file = sys.argv[4]
+font_file = sys.argv[2]
+out_file = sys.argv[3]
+del sys.argv
 
-def encode_smallGlyphMetrics (width, height,
-			      x_bearing, y_bearing,
-			      advance,
-			      stream):
+def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream):
+	x_bearing = 0
+	# center vertically
+	line_height = (font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem / float (font_metrics.upem)
+	line_ascent = font_metrics.ascent * strike_metrics.y_ppem / float (font_metrics.upem)
+	y_bearing = int (round (line_ascent - .5 * (line_height - height)))
+	advance = width
 	# smallGlyphMetrics
 	# Type	Name
 	# BYTE	height
@@ -70,7 +72,7 @@ def encode_smallGlyphMetrics (width, height,
 	stream.extend (struct.pack ("BBbbB", height, width, x_bearing, y_bearing, advance))
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format1 (img_file, stream):
+def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
 
 	img = cairo.ImageSurface.create_from_png (img_file)
 
@@ -82,7 +84,7 @@ def encode_ebdt_format1 (img_file, stream):
 	stride = img.get_stride ()
 	data = img.get_data ()
 
-	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
+	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
 	if sys.byteorder == "little" and stride == width * 4:
 		# Sweet.  Data is in desired format, ship it!
@@ -100,7 +102,7 @@ def encode_ebdt_format1 (img_file, stream):
 		offset += stride
 
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format17 (img_file, stream):
+def encode_ebdt_format17 (img_file, font_metrics, strike_metrics, stream):
 
 	img = cairo.ImageSurface.create_from_png (img_file)
 
@@ -109,7 +111,7 @@ def encode_ebdt_format17 (img_file, stream):
 
 	png = bytearray (open (img_file, 'rb').read ())
 
-	encode_smallGlyphMetrics (width, height, 0, height, width, stream)
+	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
 	# ULONG data length
 	stream.extend (struct.pack(">L", len (png)))
@@ -132,19 +134,49 @@ print "Found images for %d characters in '%s*.png'." % (len (img_files), img_pre
 font = ttx.TTFont (font_file)
 print "Loaded font '%s'." % font_file
 
-cmaps = font['cmap']
-unicode_cmap = cmaps.getcmap (3, 10)
+
+glyph_metrics = font['hmtx'].metrics
+unicode_cmap = font['cmap'].getcmap (3, 10)
 
 glyph_imgs = {}
+advance = width = height = 0
 for uchar, img_file in img_files.items ():
 	if uchar in unicode_cmap.cmap:
 		glyph_name = unicode_cmap.cmap[uchar]
 		glyph_id = font.getGlyphID (glyph_name)
 		glyph_imgs[glyph_id] = img_file
+
+		advance += glyph_metrics[glyph_name][0]
+		img = cairo.ImageSurface.create_from_png (img_file)
+		width += img.get_width ()
+		height += img.get_height ()
+
 glyphs = sorted (glyph_imgs.keys ())
 if not glyphs:
 	raise Exception ("No common characteres found between font and image dir.")
 print "Embedding images for %d glyphs." % len (glyphs)
+
+advance, width, height = (int (round (float (x) / len (glyphs))) for x in (advance, width, height))
+
+class FontMetrics:
+	def __init__ (self, upem, ascent, descent):
+		self.upem = upem
+		self.ascent = ascent
+		self.descent = descent
+
+font_metrics = FontMetrics (font['head'].unitsPerEm,
+			    font['hhea'].ascent,
+			    -font['hhea'].descent)
+
+class StrikeMetrics:
+	def __init__ (self, font_metrics, advance, bitmap_width, bitmap_height):
+		self.width = bitmap_width # in pixels
+		self.height = bitmap_height # in pixels
+		self.advance = advance # in font units
+		self.x_ppem = self.y_ppem = int (round (float (bitmap_width) * font_metrics.upem / advance))
+
+strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+
 
 ebdt = bytearray (struct.pack (">L", 0x00020000))
 bitmap_offsets = []
@@ -156,7 +188,7 @@ for glyph in glyphs:
 	#print "Embedding %s for glyph #%d" % (img_file, glyph)
 	sys.stdout.write ('.')
 	offset = len (ebdt)
-	encode_ebdt_image_func (img_file, ebdt)
+	encode_ebdt_image_func (img_file, font_metrics, strike_metrics, ebdt)
 	bitmap_offsets.append ((glyph, offset))
 bitmap_offsets.append ((None, len (ebdt)))
 print
@@ -172,7 +204,7 @@ def encode_indexSubTable1 (offsets, image_format, stream):
 		stream.extend (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
 	stream.extend (struct.pack(">L", offsets[-1][1]))
 
-def encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem):
+def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	# sbitLineMetrics
 	# Type	Name
 	# CHAR	ascender
@@ -187,14 +219,17 @@ def encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem):
 	# CHAR	minAfterBL
 	# CHAR	pad1
 	# CHAR	pad2
-	stream.extend (struct.pack ("bbBbbbbbbbbb", y_ppem, 0, x_ppem, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+	line_height = int (round ((font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem / font_metrics.upem))
+	ascent = int (round (font_metrics.ascent * strike_metrics.y_ppem / font_metrics.upem))
+	descent = - (line_height - ascent)
+	stream.extend (struct.pack ("bbBbbbbbbbbb", ascent, descent, strike_metrics.width, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
-def encode_sbitLineMetrics_vert (stream, x_ppem, y_ppem):
-	encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem) # XXX
+def encode_sbitLineMetrics_vert (stream, font_metrics, strike_metrics):
+	encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics) # XXX
 
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
+def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics, stream):
 	# count number of ranges
 	count = 1
 	start = offsets[0][0]
@@ -238,17 +273,17 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 	# ULONG	colorRef	not used; set to 0.
 	stream.extend (struct.pack(">L", 0))
 	# sbitLineMetrics	hori	line metrics for text rendered horizontally
-	encode_sbitLineMetrics_hori (stream, x_ppem, y_ppem)
-	encode_sbitLineMetrics_vert (stream, x_ppem, y_ppem)
+	encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics)
+	encode_sbitLineMetrics_vert (stream, font_metrics, strike_metrics)
 	# sbitLineMetrics	vert	line metrics for text rendered vertically
 	# USHORT	startGlyphIndex	lowest glyph index for this size
 	stream.extend (struct.pack(">H", offsets[0][0]))
 	# USHORT	endGlyphIndex	highest glyph index for this size
 	stream.extend (struct.pack(">H", offsets[-2][0]))
 	# BYTE	ppemX	horizontal pixels per Em
-	stream.extend (struct.pack(">B", x_ppem))
+	stream.extend (struct.pack(">B", strike_metrics.x_ppem))
 	# BYTE	ppemY	vertical pixels per Em
-	stream.extend (struct.pack(">B", y_ppem))
+	stream.extend (struct.pack(">B", strike_metrics.y_ppem))
 	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the following bitDepth values, as described below: 1, 2, 4, and 8.
 	stream.extend (struct.pack(">B", 32))
 	# CHAR	flags	vertical or horizontal (see bitmapFlags)
@@ -259,7 +294,7 @@ def encode_bitmapSizeTable (offsets, image_format, x_ppem, y_ppem, stream):
 
 eblc = bytearray (struct.pack (">L", 0x00020000))
 eblc.extend (struct.pack(">L", 1)) # ULONG numSizes
-encode_bitmapSizeTable (bitmap_offsets, image_format, strike_size, strike_size, eblc)
+encode_bitmapSizeTable (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
 print "EBLC table synthesized: %d bytes." % len (eblc)
 
 def add_table (font, tag, data):
