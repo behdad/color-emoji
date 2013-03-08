@@ -147,7 +147,7 @@ def encode_ebdt_format1 (img_file,
 			stream.extend (pixel)
 		offset += stride
 
-cbdt_png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "IDAT", "IEND"]
+cbdt_png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "sRGB", "IDAT", "IEND"]
 
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file,
