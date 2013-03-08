@@ -496,6 +496,10 @@ dropped from the PNG images when embedding.  By default they are dropped.
 				    -font['hhea'].descent)
 	glyph_metrics = font['hmtx'].metrics
 	unicode_cmap = font['cmap'].getcmap (3, 10)
+	if not unicode_cmap:
+		unicode_cmap = font['cmap'].getcmap (3, 1)
+	if not unicode_cmap:
+		raise Exception ("Failed to find a Unicode cmap.")
 
 	image_format = 1 if 'uncompressed' in options else 17
 
