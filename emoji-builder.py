@@ -56,6 +56,8 @@ out_file = sys.argv[3]
 del sys.argv
 
 
+def div (a, b):
+	return int (round (a / float (b)))
 
 class FontMetrics:
 	def __init__ (self, upem, ascent, descent):
@@ -68,7 +70,7 @@ class StrikeMetrics:
 		self.width = bitmap_width # in pixels
 		self.height = bitmap_height # in pixels
 		self.advance = advance # in font units
-		self.x_ppem = self.y_ppem = int (round (float (bitmap_width) * font_metrics.upem / advance))
+		self.x_ppem = self.y_ppem = div (bitmap_width * font_metrics.upem, advance)
 
 
 
@@ -188,7 +190,7 @@ if not glyphs:
 	raise Exception ("No common characteres found between font and image dir.")
 print "Embedding images for %d glyphs." % len (glyphs)
 
-advance, width, height = (int (round (float (x) / len (glyphs))) for x in (advance, width, height))
+advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
 
 font_metrics = FontMetrics (font['head'].unitsPerEm, font['hhea'].ascent, -font['hhea'].descent)
 
@@ -240,8 +242,8 @@ def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	# CHAR	minAfterBL
 	# CHAR	pad1
 	# CHAR	pad2
-	line_height = int (round ((font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem / float (font_metrics.upem)))
-	ascent = int (round (font_metrics.ascent * strike_metrics.y_ppem / float (font_metrics.upem)))
+	line_height = div ((font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem, font_metrics.upem)
+	ascent = div (font_metrics.ascent * strike_metrics.y_ppem, font_metrics.upem)
 	descent = - (line_height - ascent)
 	stream.extend (struct.pack ("bbBbbbbbbbbb", ascent, descent, strike_metrics.width, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
