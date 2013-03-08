@@ -337,10 +337,12 @@ class EBLC:
 		count = 1
 		start = glyph_maps[0].glyph
 		last_glyph = start
+		last_image_format = glyph_maps[0].image_format
 		for gmap in glyph_maps[1:-1]:
-			if last_glyph + 1 != gmap.glyph:
+			if last_glyph + 1 != gmap.glyph or last_image_format != gmap.image_format:
 				count += 1
 			last_glyph = gmap.glyph
+			last_image_format = gmap.image_format
 		headersLen = count * 8
 
 		headers = bytearray ()
@@ -348,9 +350,10 @@ class EBLC:
 		start = glyph_maps[0].glyph
 		start_id = 0
 		last_glyph = start
+		last_image_format = glyph_maps[0].image_format
 		last_id = 0
 		for gmap in glyph_maps[1:-1]:
-			if last_glyph + 1 != gmap.glyph:
+			if last_glyph + 1 != gmap.glyph or last_image_format != gmap.image_format:
 				headers.extend (struct.pack(">HHL", start, last_glyph, headersLen + len (subtables)))
 				self.push_stream (subtables)
 				self.write_indexSubTable1 (glyph_maps[start_id:last_id+2])
@@ -359,6 +362,7 @@ class EBLC:
 				start = gmap.glyph
 				start_id = last_id + 1
 			last_glyph = gmap.glyph
+			last_image_format = gmap.image_format
 			last_id += 1
 		headers.extend (struct.pack(">HHL", start, last_glyph, headersLen + len (subtables)))
 		self.push_stream (subtables)
