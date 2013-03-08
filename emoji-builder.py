@@ -22,58 +22,88 @@ import sys, struct, StringIO
 
 
 
-def png_read_signature (f):
-	header = bytearray (f.read (8))
-	if header != bytearray ((137,80,78,71,13,10,26,10)):
-		raise Exception ("Bad PNG header")
-	return header
+class PNG:
 
-def png_read_chunk (f):
-	length = struct.unpack (">I", f.read (4))[0]
-	chunk_type = f.read (4)
-	chunk_data = f.read (length)
-	if len (chunk_data) != length:
-		raise Exception ("Bad PNG chunk length")
-	crc = f.read (4)
-	if len (crc) != 4:
-		raise Exception ("Bad PNG; couldn't read CRC")
-	return (chunk_type, chunk_data, crc)
+	signature = bytearray ((137,80,78,71,13,10,26,10))
 
-def png_read_IHDR (f):
-	(chunk_type, chunk_data, crc) = png_read_chunk (f)
-	if chunk_type != "IHDR":
-		raise Exception ("Bad PNG; Expected IHDR but found %s" % chunk_type)
-	#  Width:              4 bytes
-	#  Height:             4 bytes
-	#  Bit depth:          1 byte
-	#  Color type:         1 byte
-	#  Compression method: 1 byte
-	#  Filter method:      1 byte
-	#  Interlace method:   1 byte
-	return struct.unpack (">IIBBBBB", chunk_data)
+	def __init__ (self, f):
 
-def png_read_header (f):
-	png_read_signature (f)
-	return png_read_IHDR (f)
+		if isinstance(f, basestring):
+			f = open (f, 'rb')
 
-def png_get_size (f):
-	info = png_read_header (f)
-	return info[0:2]
+		self.f = f
+		self.IHDR = None
 
-def png_filter_chunks (png, chunks):
-	out = bytearray ()
-	f = StringIO.StringIO (png)
-	out.extend (png_read_signature (f))
-	while True:
-		chunk_type, chunk_data, crc = png_read_chunk (f)
-		if chunk_type in chunks:
-			out.extend (struct.pack (">I", len (chunk_data)))
-			out.extend (chunk_type)
-			out.extend (chunk_data)
-			out.extend (crc)
-		if chunk_type == "IEND":
-			break
-	return out
+	def tell (self):
+		return self.f.tell ()
+
+	def seek (self, pos):
+		self.f.seek (pos)
+
+	def data (self):
+		self.seek (0)
+		return bytearray (self.f.read ())
+
+	class BadSignature (Exception): pass
+	class BadChunk (Exception): pass
+
+	def read_signature (self):
+		header = bytearray (self.f.read (8))
+		if header != PNG.signature:
+			raise PNG.BadSignature
+		return PNG.signature
+
+	def read_chunk (self):
+		length = struct.unpack (">I", self.f.read (4))[0]
+		chunk_type = self.f.read (4)
+		chunk_data = self.f.read (length)
+		if len (chunk_data) != length:
+			raise PNG.BadChunk
+		crc = self.f.read (4)
+		if len (crc) != 4:
+			raise PNG.BadChunk
+		return (chunk_type, chunk_data, crc)
+
+	def read_IHDR (self):
+		(chunk_type, chunk_data, crc) = self.read_chunk ()
+		if chunk_type != "IHDR":
+			raise PNG.BadChunk
+		#  Width:              4 bytes
+		#  Height:             4 bytes
+		#  Bit depth:          1 byte
+		#  Color type:         1 byte
+		#  Compression method: 1 byte
+		#  Filter method:      1 byte
+		#  Interlace method:   1 byte
+		return struct.unpack (">IIBBBBB", chunk_data)
+
+	def read_header (self):
+		self.read_signature ()
+		self.IHDR = self.read_IHDR ()
+		return self.IHDR
+
+	def get_size (self):
+		if not self.IHDR:
+			pos = self.tell ()
+			self.seek (0)
+			self.read_header ()
+			self.seek (pos)
+		return self.IHDR[0:2]
+
+	def filter_chunks (self, chunks):
+		self.seek (0);
+		out = StringIO.StringIO ()
+		out.write (self.read_signature ())
+		while True:
+			chunk_type, chunk_data, crc = self.read_chunk ()
+			if chunk_type in chunks:
+				out.write (struct.pack (">I", len (chunk_data)))
+				out.write (chunk_type)
+				out.write (chunk_data)
+				out.write (crc)
+			if chunk_type == "IEND":
+				break
+		return PNG (out)
 
 
 
@@ -114,13 +144,13 @@ def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, strea
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 
-def encode_ebdt_format1 (img_file,
+def encode_ebdt_format1 (png,
 			 font_metrics, strike_metrics,
 			 options, stream):
 
 	import cairo
 
-	img = cairo.ImageSurface.create_from_png (img_file)
+	img = cairo.ImageSurface.create_from_png (png.data ())
 
 	if img.get_format () != cairo.FORMAT_ARGB32:
 		raise Exception ("Expected FORMAT_ARGB32, but image has format %d" % img.get_format ())
@@ -150,23 +180,21 @@ def encode_ebdt_format1 (img_file,
 cbdt_png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "sRGB", "IDAT", "IEND"]
 
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format17 (img_file,
+def encode_ebdt_format17 (png,
 			  font_metrics, strike_metrics,
 			  options, stream):
 
-	width, height = png_get_size (img_file)
-	img_file.seek (0)
-
-	png = bytearray (img_file.read ())
+	width, height = png.get_size ()
 
 	if 'keep_chunks' not in options:
-		png = png_filter_chunks (png, cbdt_png_allowed_chunks)
+		png = png.filter_chunks (cbdt_png_allowed_chunks)
 
 	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
+	png_data = png.data ()
 	# ULONG data length
-	stream.extend (struct.pack(">L", len (png)))
-	stream.extend (png)
+	stream.extend (struct.pack(">L", len (png_data)))
+	stream.extend (png_data)
 
 encode_ebdt_image_funcs = {
 	1  : encode_ebdt_format1,
@@ -185,7 +213,7 @@ def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
 		#print "Embedding %s for glyph #%d" % (img_file, glyph)
 		#sys.stdout.write ('.')
 		offset = len (stream) - base_offset
-		encode_ebdt_image_func (open (img_file, 'rb'),
+		encode_ebdt_image_func (PNG (img_file),
 					font_metrics, strike_metrics,
 					options, stream)
 		bitmap_offsets.append ((glyph, offset))
@@ -401,7 +429,7 @@ dropped from the PNG images when embedding.  By default they are dropped.
 			glyph_imgs[glyph_id] = img_file
 
 			advance += glyph_metrics[glyph_name][0]
-			w, h = png_get_size (open (img_file, 'rb'))
+			w, h = PNG (img_file).get_size ()
 			width += w
 			height += h
 
