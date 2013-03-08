@@ -126,7 +126,7 @@ class StrikeMetrics:
 
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream):
+def encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream):
 	x_bearing = 0
 	# center vertically
 	line_height = (font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem / float (font_metrics.upem)
@@ -160,7 +160,7 @@ def encode_ebdt_format1 (png,
 	stride = img.get_stride ()
 	data = img.get_data ()
 
-	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
+	encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
 	if sys.byteorder == "little" and stride == width * 4:
 		# Sweet.  Data is in desired format, ship it!
@@ -189,7 +189,7 @@ def encode_ebdt_format17 (png,
 	if 'keep_chunks' not in options:
 		png = png.filter_chunks (cbdt_png_allowed_chunks)
 
-	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
+	encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
 	png_data = png.data ()
 	# ULONG data length
