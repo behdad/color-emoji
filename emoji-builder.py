@@ -18,7 +18,47 @@
 #
 
 
-import struct, cairo
+import sys, struct
+
+
+
+def png_read_signature (f):
+	header = bytearray (f.read (8))
+	if header != bytearray ((137,80,78,71,13,10,26,10)):
+		raise Exception ("Bad PNG header")
+
+def png_read_chunk (f):
+	length = struct.unpack (">I", f.read (4))[0]
+	chunk_type = f.read (4)
+	chunk_data = f.read (length)
+	if len (chunk_data) != length:
+		raise Exception ("Bad PNG chunk length")
+	crc = f.read (4)
+	if len (crc) != 4:
+		raise Exception ("Bad PNG; couldn't read CRC")
+	return (chunk_type, chunk_data, crc)
+
+def png_read_IHDR (f):
+	(chunk_type, chunk_data, crc) = png_read_chunk (f)
+	if chunk_type != "IHDR":
+		raise Exception ("Bad PNG; Expected IHDR but found %s" % chunk_type)
+	#  Width:              4 bytes
+	#  Height:             4 bytes
+	#  Bit depth:          1 byte
+	#  Color type:         1 byte
+	#  Compression method: 1 byte
+	#  Filter method:      1 byte
+	#  Interlace method:   1 byte
+	return struct.unpack (">IIBBBBB", chunk_data)
+
+def png_read_header (f):
+	png_read_signature (f)
+	return png_read_IHDR (f)
+
+def png_get_size (f):
+	info = png_read_header (f)
+	return info[0:2]
+
 
 
 def div (a, b):
@@ -57,7 +97,10 @@ def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, strea
 	stream.extend (struct.pack ("BBbbB", height, width, x_bearing, y_bearing, advance))
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
+
 def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
+
+	import cairo
 
 	img = cairo.ImageSurface.create_from_png (img_file)
 
@@ -89,12 +132,11 @@ def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file, font_metrics, strike_metrics, stream):
 
-	img = cairo.ImageSurface.create_from_png (img_file)
+	png = open (img_file, 'rb')
+	width, height = png_get_size (png)
+	png.seek (0)
 
-	width = img.get_width ()
-	height = img.get_height ()
-
-	png = bytearray (open (img_file, 'rb').read ())
+	png = bytearray (png.read ())
 
 	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
@@ -323,9 +365,9 @@ def main (argv):
 			glyph_imgs[glyph_id] = img_file
 
 			advance += glyph_metrics[glyph_name][0]
-			img = cairo.ImageSurface.create_from_png (img_file)
-			width += img.get_width ()
-			height += img.get_height ()
+			w, h = png_get_size (open (img_file, 'rb'))
+			width += w
+			height += h
 
 	glyphs = sorted (glyph_imgs.keys ())
 	if not glyphs:
@@ -362,5 +404,4 @@ def main (argv):
 
 
 if __name__ == '__main__':
-	import sys
 	main (sys.argv)
