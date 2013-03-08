@@ -108,7 +108,8 @@ encode_ebdt_image_funcs = {
 }
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, stream):
+def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
+		 font_metrics, strike_metrics, stream):
 	bitmap_offsets = []
 	base_offset = len (stream)
 	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
@@ -238,122 +239,128 @@ def encode_eblcHeader (num_strikes, stream):
 	stream.extend (struct.pack(">L", num_strikes)) # ULONG numSizes
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc (offsets, image_format, font_metrics, strike_metrics, stream):
+def encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, stream):
 	encode_eblcHeader (1, stream)
 	encode_eblc_bitmapSizeTable (bitmap_offsets,
 				     image_format,
 				     font_metrics,
 				     strike_metrics,
 				     stream)
-	return eblc
 
 
 
-import glob, sys
-from fontTools import ttx, ttLib
+def main (argv):
+	import glob
+	from fontTools import ttx, ttLib
 
-drop_outlines = True
-if "-O" in sys.argv:
-	drop_outlines = False
-	sys.argv.remove ("-D")
+	drop_outlines = True
+	if "-O" in argv:
+		drop_outlines = False
+		argv.remove ("-D")
 
-uncompressed = False
-if "-U" in sys.argv:
-	uncompressed = True
-	sys.argv.remove ("-U")
+	uncompressed = False
+	if "-U" in argv:
+		uncompressed = True
+		argv.remove ("-U")
 
-if len (sys.argv) != 4:
-	print >>sys.stderr, """
-Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
+	if len (argv) != 4:
+		print >>sys.stderr, """
+	Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
 
-This will search for files that have img-prefix followed by a hex number,
-and end in ".png".  For example, if img-prefix is "icons/", then files
-with names like "icons/1f4A9.png" will be loaded.  All images must have
-the same size (preferably square).
+	This will search for files that have img-prefix followed by a hex number,
+	and end in ".png".  For example, if img-prefix is "icons/", then files
+	with names like "icons/1f4A9.png" will be loaded.  All images must have
+	the same size (preferably square).
 
-The script then embeds color bitmaps in the font, for characters that the
-font already supports, and writes the new font out.
+	The script then embeds color bitmaps in the font, for characters that the
+	font already supports, and writes the new font out.
 
-If the -U parameter is given, uncompressed images are stored (imageFormat=1).
-By default, PNG images are stored (imageFormat=17).
+	If the -U parameter is given, uncompressed images are stored (imageFormat=1).
+	By default, PNG images are stored (imageFormat=17).
 
-If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
-related tables are NOT dropped from the font.  By default they are dropped.
-"""
-	sys.exit (1)
+	If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
+	related tables are NOT dropped from the font.  By default they are dropped.
+	"""
+		sys.exit (1)
 
-img_prefix = sys.argv[1]
-font_file = sys.argv[2]
-out_file = sys.argv[3]
-del sys.argv
+	img_prefix = argv[1]
+	font_file = argv[2]
+	out_file = argv[3]
+	del argv
 
-def add_font_table (font, tag, data):
-	tab = ttLib.tables.DefaultTable.DefaultTable (tag)
-	tab.data = str(data)
-	font[tag] = tab
+	def add_font_table (font, tag, data):
+		tab = ttLib.tables.DefaultTable.DefaultTable (tag)
+		tab.data = str(data)
+		font[tag] = tab
 
-def drop_outline_tables (font):
-	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
-		try:
-			del font[tag]
-		except KeyError:
-			pass
+	def drop_outline_tables (font):
+		for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
+			try:
+				del font[tag]
+			except KeyError:
+				pass
 
-img_files = {}
-for img_file in glob.glob ("%s*.png" % img_prefix):
-	uchar = int (img_file[len (img_prefix):-4], 16)
-	img_files[uchar] = img_file
-if not img_files:
-	raise Exception ("No image files found: '%s*.png'" % img_prefix)
-print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
+	img_files = {}
+	for img_file in glob.glob ("%s*.png" % img_prefix):
+		uchar = int (img_file[len (img_prefix):-4], 16)
+		img_files[uchar] = img_file
+	if not img_files:
+		raise Exception ("No image files found: '%s*.png'" % img_prefix)
+	print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
 
-font = ttx.TTFont (font_file)
-print "Loaded font '%s'." % font_file
+	font = ttx.TTFont (font_file)
+	print "Loaded font '%s'." % font_file
 
-glyph_metrics = font['hmtx'].metrics
-unicode_cmap = font['cmap'].getcmap (3, 10)
+	glyph_metrics = font['hmtx'].metrics
+	unicode_cmap = font['cmap'].getcmap (3, 10)
 
-glyph_imgs = {}
-advance = width = height = 0
-for uchar, img_file in img_files.items ():
-	if uchar in unicode_cmap.cmap:
-		glyph_name = unicode_cmap.cmap[uchar]
-		glyph_id = font.getGlyphID (glyph_name)
-		glyph_imgs[glyph_id] = img_file
+	glyph_imgs = {}
+	advance = width = height = 0
+	for uchar, img_file in img_files.items ():
+		if uchar in unicode_cmap.cmap:
+			glyph_name = unicode_cmap.cmap[uchar]
+			glyph_id = font.getGlyphID (glyph_name)
+			glyph_imgs[glyph_id] = img_file
 
-		advance += glyph_metrics[glyph_name][0]
-		img = cairo.ImageSurface.create_from_png (img_file)
-		width += img.get_width ()
-		height += img.get_height ()
+			advance += glyph_metrics[glyph_name][0]
+			img = cairo.ImageSurface.create_from_png (img_file)
+			width += img.get_width ()
+			height += img.get_height ()
 
-glyphs = sorted (glyph_imgs.keys ())
-if not glyphs:
-	raise Exception ("No common characteres found between font and image dir.")
-print "Embedding images for %d glyphs." % len (glyphs)
+	glyphs = sorted (glyph_imgs.keys ())
+	if not glyphs:
+		raise Exception ("No common characteres found between font and image dir.")
+	print "Embedding images for %d glyphs." % len (glyphs)
 
-advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
-font_metrics = FontMetrics (font['head'].unitsPerEm,
-			    font['hhea'].ascent,
-			    -font['hhea'].descent)
-strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+	advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
+	font_metrics = FontMetrics (font['head'].unitsPerEm,
+				    font['hhea'].ascent,
+				    -font['hhea'].descent)
+	strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
-image_format = 1 if uncompressed else 17
-encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
+	image_format = 1 if uncompressed else 17
+	encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
 
-ebdt = bytearray ()
-bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, ebdt)
-print "EBDT table synthesized: %d bytes." % len (ebdt)
+	ebdt = bytearray ()
+	bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
+				      font_metrics, strike_metrics, ebdt)
+	print "EBDT table synthesized: %d bytes." % len (ebdt)
 
-eblc = bytearray ()
-encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
-print "EBLC table synthesized: %d bytes." % len (eblc)
+	eblc = bytearray ()
+	encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
+	print "EBLC table synthesized: %d bytes." % len (eblc)
 
-add_font_table (font, 'CBDT', ebdt)
-add_font_table (font, 'CBLC', eblc)
+	add_font_table (font, 'CBDT', ebdt)
+	add_font_table (font, 'CBLC', eblc)
 
-if drop_outlines:
-	drop_outline_tables (font)
-	print "Dropped outline ('glyf', 'CFF ') and related tables."
+	if drop_outlines:
+		drop_outline_tables (font)
+		print "Dropped outline ('glyf', 'CFF ') and related tables."
 
-font.save (out_file)
-print "Output font '%s' generated." % out_file
+	font.save (out_file)
+	print "Output font '%s' generated." % out_file
+
+
+if __name__ == '__main__':
+	import sys
+	main (sys.argv)
