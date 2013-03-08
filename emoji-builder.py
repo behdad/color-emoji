@@ -275,14 +275,25 @@ class CBLC:
 		self.stream = self.streams.pop ()
 		return stream
 
-	def write_header (self, num_strikes):
+	def write_header (self):
 		self.write (struct.pack (">L", 0x00020000)) # FIXED version
-		self.write (struct.pack (">L", num_strikes)) # ULONG numSizes
+
+	def start_strikes (self, num_strikes):
+		self.num_strikes = num_strikes
+		self.write (struct.pack (">L", self.num_strikes)) # ULONG numSizes
+		self.bitmapSizeTables = bytearray ()
+		self.otherTables = bytearray ()
 
 	def write_strike (self, strike_metrics, glyph_maps):
 		self.strike_metrics = strike_metrics
 		self.write_bitmapSizeTable (glyph_maps)
 		del self.strike_metrics
+
+	def end_strikes (self):
+		self.write (self.bitmapSizeTables)
+		self.write (self.otherTables)
+		del self.bitmapSizeTables
+		del self.otherTables
 
 	def write_sbitLineMetrics_hori (self):
 
@@ -371,12 +382,15 @@ class CBLC:
 
 		indexTablesSize = len (headers) + len (subtables)
 		numberOfIndexSubTables = count
-		bitmapSizeTableSize = 48
+		bitmapSizeTableSize = 48 * self.num_strikes
 
+		indexSubTableArrayOffset = 8 + bitmapSizeTableSize + len (self.otherTables)
+
+		self.push_stream (self.bitmapSizeTables)
 		# bitmapSizeTable
 		# Type	Name	Description
 		# ULONG	indexSubTableArrayOffset	offset to index subtable from beginning of CBLC.
-		self.write (struct.pack(">L", self.tell () + bitmapSizeTableSize))
+		self.write (struct.pack(">L", indexSubTableArrayOffset))
 		# ULONG	indexTablesSize	number of bytes in corresponding index subtables and array
 		self.write (struct.pack(">L", indexTablesSize))
 		# ULONG	numberOfIndexSubTables	an index subtable for each range or format change
@@ -400,9 +414,12 @@ class CBLC:
 		self.write (struct.pack(">B", 32))
 		# CHAR	flags	vertical or horizontal (see bitmapFlags)
 		self.write (struct.pack(">b", 0x01))
+		self.pop_stream ()
 
+		self.push_stream (self.otherTables)
 		self.write (headers)
 		self.write (subtables)
+		self.pop_stream ()
 
 
 def main (argv):
@@ -423,16 +440,19 @@ def main (argv):
 		options.append ('keep_chunks')
 		argv.remove ("-C")
 
-	if len (argv) != 4:
+	if len (argv) < 4:
 		print >>sys.stderr, """
 Usage:
 
-  emjoi-builder.py [-O] [-U] [-A] font.ttf out-font.ttf strike-img-prefix
+  emjoi-builder.py [-O] [-U] [-A] font.ttf out-font.ttf strike-img-prefix...
 
 This will search for files that have strike-img-prefix followed by a hex
 number, and end in ".png".  For example, if strike-img-prefix is "icons/uni",
 then files with names like "icons/uni1f4A9.png" will be loaded.  All images
 for the same strike should have the same size for best results.
+
+If multiple strike-img-prefix parameters are provided, multiple strikes
+will be embedded, in the order provided.
 
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
@@ -450,7 +470,7 @@ dropped from the PNG images when embedding.  By default they are dropped.
 
 	font_file = argv[1]
 	out_file = argv[2]
-	img_prefix = argv[3]
+	img_prefixes = argv[3:]
 	del argv
 
 	def add_font_table (font, tag, data):
@@ -465,62 +485,78 @@ dropped from the PNG images when embedding.  By default they are dropped.
 			except KeyError:
 				pass
 
-	img_files = {}
-	for img_file in glob.glob ("%s*.png" % img_prefix):
-		uchar = int (img_file[len (img_prefix):-4], 16)
-		img_files[uchar] = img_file
-	if not img_files:
-		raise Exception ("No image files found: '%s*.png'" % img_prefix)
-	print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
+
+	print
 
 	font = ttx.TTFont (font_file)
 	print "Loaded font '%s'." % font_file
 
-	glyph_metrics = font['hmtx'].metrics
-	unicode_cmap = font['cmap'].getcmap (3, 10)
-
-	glyph_imgs = {}
-	advance = width = height = 0
-	for uchar, img_file in img_files.items ():
-		if uchar in unicode_cmap.cmap:
-			glyph_name = unicode_cmap.cmap[uchar]
-			glyph_id = font.getGlyphID (glyph_name)
-			glyph_imgs[glyph_id] = img_file
-
-			advance += glyph_metrics[glyph_name][0]
-			w, h = PNG (img_file).get_size ()
-			width += w
-			height += h
-
-	glyphs = sorted (glyph_imgs.keys ())
-	if not glyphs:
-		raise Exception ("No common characteres found between font and image dir.")
-	print "Embedding images for %d glyphs." % len (glyphs)
-
-	advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
 	font_metrics = FontMetrics (font['head'].unitsPerEm,
 				    font['hhea'].ascent,
 				    -font['hhea'].descent)
-	strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+	glyph_metrics = font['hmtx'].metrics
+	unicode_cmap = font['cmap'].getcmap (3, 10)
 
 	image_format = 1 if 'uncompressed' in options else 17
 
 	ebdt = CBDT (font_metrics, options)
 	ebdt.write_header ()
-	ebdt.start_strike (strike_metrics)
-	ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
-	glyph_maps = ebdt.end_strike ()
-	ebdt = ebdt.data ()
-	print "CBDT table synthesized: %d bytes." % len (ebdt)
-
 	eblc = CBLC (font_metrics, options)
-	eblc.write_header (1)
-	eblc.write_strike (strike_metrics, glyph_maps)
+	eblc.write_header ()
+	eblc.start_strikes (len (img_prefixes))
+
+	for img_prefix in img_prefixes:
+
+		print
+
+		img_files = {}
+		glb = "%s*.png" % img_prefix
+		print "Looking for images matching '%s'." % glb
+		for img_file in glob.glob (glb):
+			uchar = int (img_file[len (img_prefix):-4], 16)
+			img_files[uchar] = img_file
+		if not img_files:
+			raise Exception ("No image files found in '%s'." % glb)
+		print "Found images for %d characters in '%s'." % (len (img_files), glb)
+
+		glyph_imgs = {}
+		advance = width = height = 0
+		for uchar, img_file in img_files.items ():
+			if uchar in unicode_cmap.cmap:
+				glyph_name = unicode_cmap.cmap[uchar]
+				glyph_id = font.getGlyphID (glyph_name)
+				glyph_imgs[glyph_id] = img_file
+
+				advance += glyph_metrics[glyph_name][0]
+				w, h = PNG (img_file).get_size ()
+				width += w
+				height += h
+
+		glyphs = sorted (glyph_imgs.keys ())
+		if not glyphs:
+			raise Exception ("No common characteres found between font and '%s'." % glb)
+		print "Embedding images for %d glyphs for this strike." % len (glyphs)
+
+		advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
+		strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+
+		ebdt.start_strike (strike_metrics)
+		ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
+		glyph_maps = ebdt.end_strike ()
+
+		eblc.write_strike (strike_metrics, glyph_maps)
+
+	print
+
+	ebdt = ebdt.data ()
+	add_font_table (font, 'CBDT', ebdt)
+	print "CBDT table synthesized: %d bytes." % len (ebdt)
+	eblc.end_strikes ()
 	eblc = eblc.data ()
+	add_font_table (font, 'CBLC', eblc)
 	print "CBLC table synthesized: %d bytes." % len (eblc)
 
-	add_font_table (font, 'CBDT', ebdt)
-	add_font_table (font, 'CBLC', eblc)
+	print
 
 	if 'keep_outlines' not in options:
 		drop_outline_tables (font)
