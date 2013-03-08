@@ -40,6 +40,9 @@ class PNG:
 	def seek (self, pos):
 		self.f.seek (pos)
 
+	def stream (self):
+		return self.f
+
 	def data (self):
 		self.seek (0)
 		return bytearray (self.f.read ())
@@ -126,99 +129,119 @@ class StrikeMetrics:
 
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream):
-	x_bearing = 0
-	# center vertically
-	line_height = (font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem / float (font_metrics.upem)
-	line_ascent = font_metrics.ascent * strike_metrics.y_ppem / float (font_metrics.upem)
-	y_bearing = int (round (line_ascent - .5 * (line_height - height)))
-	advance = width
-	# smallGlyphMetrics
-	# Type	Name
-	# BYTE	height
-	# BYTE	width
-	# CHAR	BearingX
-	# CHAR	BearingY
-	# BYTE	Advance
-	stream.extend (struct.pack ("BBbbB", height, width, x_bearing, y_bearing, advance))
+class EBDT:
 
-# http://www.microsoft.com/typography/otspec/ebdt.htm
+	def __init__ (self, font_metrics, options = (), stream = None):
+		self.stream = stream if stream != None else bytearray ()
+		self.options = options
+		self.font_metrics = font_metrics
+		self.base_offset = self.tell ()
 
-def encode_ebdt_format1 (png,
-			 font_metrics, strike_metrics,
-			 options, stream):
+	def tell (self):
+		return len (self.stream)
+	def write (self, data):
+		self.stream.extend (data)
+	def data (self):
+		return self.stream
 
-	import cairo
+	def write_header (self):
+		self.write (struct.pack (">L", 0x00020000)) # FIXED version
 
-	img = cairo.ImageSurface.create_from_png (png.data ())
+	def start_strike (self, strike_metrics):
+		self.strike_metrics = strike_metrics
+		self.glyph_offsets = []
 
-	if img.get_format () != cairo.FORMAT_ARGB32:
-		raise Exception ("Expected FORMAT_ARGB32, but image has format %d" % img.get_format ())
+	def write_glyphs (self, image_format, glyph_filenames, glyphs):
 
-	width = img.get_width ()
-	height = img.get_height ()
-	stride = img.get_stride ()
-	data = img.get_data ()
+		write_func = self.image_write_func (image_format)
+		for glyph in glyphs:
+			img_file = glyph_filenames[glyph]
+			offset = self.tell () - self.base_offset
+			write_func (PNG (img_file))
+			self.glyph_offsets.append ((glyph, offset))
 
-	encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
+	def end_strike (self):
 
-	if sys.byteorder == "little" and stride == width * 4:
-		# Sweet.  Data is in desired format, ship it!
-		stream.extend (data)
-		return
+		self.glyph_offsets.append ((None, self.tell ()))
+		glyph_offsets = self.glyph_offsets
+		del self.glyph_offsets
+		del self.strike_metrics
+		return glyph_offsets
 
-	# Unexpected stride or endianness, do it the slow way
-	offset = 0
-	for y in range (height):
-		for x in range (width):
-			pixel = data[offset + 4 * x: offset + 4 * (x + 1)]
-			# Convert to little endian
-			pixel = struct.pack ("<I", struct.unpack ("@I", pixel)[0])
-			stream.extend (pixel)
-		offset += stride
+	def write_smallGlyphMetrics (self, width, height):
 
-cbdt_png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "sRGB", "IDAT", "IEND"]
+		ascent = self.font_metrics.ascent
+		descent = self.font_metrics.descent
+		upem = self.font_metrics.upem
+		y_ppem = self.strike_metrics.y_ppem
 
-# XXX http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format17 (png,
-			  font_metrics, strike_metrics,
-			  options, stream):
+		x_bearing = 0
+		# center vertically
+		line_height = (ascent + descent) * y_ppem / float (upem)
+		line_ascent = ascent * y_ppem / float (upem)
+		y_bearing = int (round (line_ascent - .5 * (line_height - height)))
+		advance = width
+		# smallGlyphMetrics
+		# Type	Name
+		# BYTE	height
+		# BYTE	width
+		# CHAR	BearingX
+		# CHAR	BearingY
+		# BYTE	Advance
+		self.write (struct.pack ("BBbbB",
+					 height, width,
+					 x_bearing, y_bearing,
+					 advance))
 
-	width, height = png.get_size ()
+	def write_format1 (self, png):
 
-	if 'keep_chunks' not in options:
-		png = png.filter_chunks (cbdt_png_allowed_chunks)
+		import cairo
+		img = cairo.ImageSurface.create_from_png (png.stream ())
+		if img.get_format () != cairo.FORMAT_ARGB32:
+			raise Exception ("Expected FORMAT_ARGB32, but image has format %d" % img.get_format ())
 
-	encode_ebdt_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
+		width = img.get_width ()
+		height = img.get_height ()
+		stride = img.get_stride ()
+		data = img.get_data ()
 
-	png_data = png.data ()
-	# ULONG data length
-	stream.extend (struct.pack(">L", len (png_data)))
-	stream.extend (png_data)
+		self.write_smallGlyphMetrics (width, height)
 
-encode_ebdt_image_funcs = {
-	1  : encode_ebdt_format1,
-	17 : encode_ebdt_format17,
-}
+		if sys.byteorder == "little" and stride == width * 4:
+			# Sweet.  Data is in desired format, ship it!
+			self.write (data)
+			return
 
-# http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
-		 font_metrics, strike_metrics,
-		 options, stream):
-	bitmap_offsets = []
-	base_offset = len (stream)
-	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
-	for glyph in glyphs:
-		img_file = glyph_imgs[glyph]
-		#print "Embedding %s for glyph #%d" % (img_file, glyph)
-		#sys.stdout.write ('.')
-		offset = len (stream) - base_offset
-		encode_ebdt_image_func (PNG (img_file),
-					font_metrics, strike_metrics,
-					options, stream)
-		bitmap_offsets.append ((glyph, offset))
-	bitmap_offsets.append ((None, len (stream)))
-	return bitmap_offsets
+		# Unexpected stride or endianness, do it the slow way
+		offset = 0
+		for y in range (height):
+			for x in range (width):
+				pixel = data[offset + 4 * x: offset + 4 * (x + 1)]
+				# Convert to little endian
+				pixel = struct.pack ("<I", struct.unpack ("@I", pixel)[0])
+				self.write (pixel)
+			offset += stride
+
+	png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "sRGB", "IDAT", "IEND"]
+
+	def write_format17 (self, png):
+
+		width, height = png.get_size ()
+
+		if 'keep_chunks' not in self.options:
+			png = png.filter_chunks (self.png_allowed_chunks)
+
+		self.write_smallGlyphMetrics (width, height)
+
+		png_data = png.data ()
+		# ULONG data length
+		self.write (struct.pack(">L", len (png_data)))
+		self.write (png_data)
+
+	def image_write_func (self, image_format):
+		if image_format == 1: return self.write_format1
+		if image_format == 17: return self.write_format17
+		return None
 
 
 
@@ -445,12 +468,13 @@ dropped from the PNG images when embedding.  By default they are dropped.
 	strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
 	image_format = 1 if 'uncompressed' in options else 17
-	encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
 
-	ebdt = bytearray ()
-	bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
-				      font_metrics, strike_metrics,
-				      options, ebdt)
+	ebdt = EBDT (font_metrics, options)
+	ebdt.write_header ()
+	ebdt.start_strike (strike_metrics)
+	ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
+	bitmap_offsets = ebdt.end_strike ()
+	ebdt = ebdt.data ()
 	print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 	eblc = bytearray ()
