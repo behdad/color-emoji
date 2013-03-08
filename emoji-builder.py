@@ -425,12 +425,14 @@ def main (argv):
 
 	if len (argv) != 4:
 		print >>sys.stderr, """
-Usage: emjoi-builder.py [-O] [-U] [-A] img-prefix font.ttf out-font.ttf
+Usage:
 
-This will search for files that have img-prefix followed by a hex number,
-and end in ".png".  For example, if img-prefix is "icons/", then files
-with names like "icons/1f4A9.png" will be loaded.  All images must have
-the same size (preferably square).
+  emjoi-builder.py [-O] [-U] [-A] font.ttf out-font.ttf strike-img-prefix
+
+This will search for files that have strike-img-prefix followed by a hex
+number, and end in ".png".  For example, if strike-img-prefix is "icons/uni",
+then files with names like "icons/uni1f4A9.png" will be loaded.  All images
+for the same strike should have the same size for best results.
 
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
@@ -446,9 +448,9 @@ dropped from the PNG images when embedding.  By default they are dropped.
 """
 		sys.exit (1)
 
-	img_prefix = argv[1]
-	font_file = argv[2]
-	out_file = argv[3]
+	font_file = argv[1]
+	out_file = argv[2]
+	img_prefix = argv[3]
 	del argv
 
 	def add_font_table (font, tag, data):
