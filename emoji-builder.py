@@ -132,11 +132,10 @@ def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file, font_metrics, strike_metrics, stream):
 
-	png = open (img_file, 'rb')
-	width, height = png_get_size (png)
-	png.seek (0)
+	width, height = png_get_size (img_file)
+	img_file.seek (0)
 
-	png = bytearray (png.read ())
+	png = bytearray (img_file.read ())
 
 	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
@@ -160,7 +159,9 @@ def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
 		#print "Embedding %s for glyph #%d" % (img_file, glyph)
 		#sys.stdout.write ('.')
 		offset = len (stream) - base_offset
-		encode_ebdt_image_func (img_file, font_metrics, strike_metrics, stream)
+		encode_ebdt_image_func (open (img_file, 'rb'),
+					font_metrics, strike_metrics,
+					stream)
 		bitmap_offsets.append ((glyph, offset))
 	bitmap_offsets.append ((None, len (stream)))
 	return bitmap_offsets
