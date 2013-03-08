@@ -196,21 +196,26 @@ font_metrics = FontMetrics (font['head'].unitsPerEm, font['hhea'].ascent, -font[
 
 strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
+# http://www.microsoft.com/typography/otspec/ebdt.htm
+def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, stream):
+	bitmap_offsets = []
+	base_offset = len (stream)
+	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
+	for glyph in glyphs:
+		img_file = glyph_imgs[glyph]
+		#print "Embedding %s for glyph #%d" % (img_file, glyph)
+		#sys.stdout.write ('.')
+		offset = len (stream) - base_offset
+		encode_ebdt_image_func (img_file, font_metrics, strike_metrics, stream)
+		bitmap_offsets.append ((glyph, offset))
+	bitmap_offsets.append ((None, len (stream)))
+	return bitmap_offsets
 
-ebdt = bytearray (struct.pack (">L", 0x00020000))
-bitmap_offsets = []
 image_format = 1 if uncompressed else 17
-
 encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
-for glyph in glyphs:
-	img_file = glyph_imgs[glyph]
-	#print "Embedding %s for glyph #%d" % (img_file, glyph)
-	sys.stdout.write ('.')
-	offset = len (ebdt)
-	encode_ebdt_image_func (img_file, font_metrics, strike_metrics, ebdt)
-	bitmap_offsets.append ((glyph, offset))
-bitmap_offsets.append ((None, len (ebdt)))
-print
+
+ebdt = bytearray ()
+bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, ebdt)
 print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 
@@ -318,7 +323,7 @@ def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics,
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_eblcHeader (num_strikes, stream):
-	stream.extend (struct.pack (">L", 0x00020000))
+	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
 	stream.extend (struct.pack(">L", num_strikes)) # ULONG numSizes
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
