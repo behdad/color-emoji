@@ -18,7 +18,7 @@
 #
 
 
-import sys, struct
+import sys, struct, StringIO
 
 
 
@@ -26,6 +26,7 @@ def png_read_signature (f):
 	header = bytearray (f.read (8))
 	if header != bytearray ((137,80,78,71,13,10,26,10)):
 		raise Exception ("Bad PNG header")
+	return header
 
 def png_read_chunk (f):
 	length = struct.unpack (">I", f.read (4))[0]
@@ -58,6 +59,21 @@ def png_read_header (f):
 def png_get_size (f):
 	info = png_read_header (f)
 	return info[0:2]
+
+def png_filter_chunks (png, chunks):
+	out = bytearray ()
+	f = StringIO.StringIO (png)
+	out.extend (png_read_signature (f))
+	while True:
+		chunk_type, chunk_data, crc = png_read_chunk (f)
+		if chunk_type in chunks:
+			out.extend (struct.pack (">I", len (chunk_data)))
+			out.extend (chunk_type)
+			out.extend (chunk_data)
+			out.extend (crc)
+		if chunk_type == "IEND":
+			break
+	return out
 
 
 
@@ -131,6 +147,8 @@ def encode_ebdt_format1 (img_file,
 			stream.extend (pixel)
 		offset += stride
 
+cbdt_png_allowed_chunks =  ["IHDR", "PLTE", "tRNS", "IDAT", "IEND"]
+
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt_format17 (img_file,
 			  font_metrics, strike_metrics,
@@ -140,6 +158,9 @@ def encode_ebdt_format17 (img_file,
 	img_file.seek (0)
 
 	png = bytearray (img_file.read ())
+
+	if 'keep_chunks' not in options:
+		png = png_filter_chunks (png, cbdt_png_allowed_chunks)
 
 	encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream)
 
@@ -313,24 +334,31 @@ def main (argv):
 		options.append ('uncompressed')
 		argv.remove ("-U")
 
+	if "-C" in argv:
+		options.append ('keep_chunks')
+		argv.remove ("-C")
+
 	if len (argv) != 4:
 		print >>sys.stderr, """
-	Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
+Usage: emjoi-builder.py [-O] [-U] [-A] img-prefix font.ttf out-font.ttf
 
-	This will search for files that have img-prefix followed by a hex number,
-	and end in ".png".  For example, if img-prefix is "icons/", then files
-	with names like "icons/1f4A9.png" will be loaded.  All images must have
-	the same size (preferably square).
+This will search for files that have img-prefix followed by a hex number,
+and end in ".png".  For example, if img-prefix is "icons/", then files
+with names like "icons/1f4A9.png" will be loaded.  All images must have
+the same size (preferably square).
 
-	The script then embeds color bitmaps in the font, for characters that the
-	font already supports, and writes the new font out.
+The script then embeds color bitmaps in the font, for characters that the
+font already supports, and writes the new font out.
 
-	If the -U parameter is given, uncompressed images are stored (imageFormat=1).
-	By default, PNG images are stored (imageFormat=17).
+If the -U parameter is given, uncompressed images are stored (imageFormat=1).
+By default, PNG images are stored (imageFormat=17).
 
-	If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
-	related tables are NOT dropped from the font.  By default they are dropped.
-	"""
+If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
+related tables are NOT dropped from the font.  By default they are dropped.
+
+If the -C parameter is given, unused chunks (color profile, etc) are NOT
+dropped from the PNG images when embedding.  By default they are dropped.
+"""
 		sys.exit (1)
 
 	img_prefix = argv[1]
