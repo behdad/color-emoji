@@ -157,7 +157,7 @@ class CBDT:
 		self.strike_metrics = strike_metrics
 		self.glyph_maps = []
 
-	def write_glyphs (self, image_format, glyph_filenames, glyphs):
+	def write_glyphs (self, glyphs, glyph_filenames, image_format):
 
 		write_func = self.image_write_func (image_format)
 		for glyph in glyphs:
@@ -541,7 +541,7 @@ dropped from the PNG images when embedding.  By default they are dropped.
 		strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
 		ebdt.start_strike (strike_metrics)
-		ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
+		ebdt.write_glyphs (glyphs, glyph_imgs, image_format)
 		glyph_maps = ebdt.end_strike ()
 
 		eblc.write_strike (strike_metrics, glyph_maps)
