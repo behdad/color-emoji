@@ -336,31 +336,31 @@ class EBLC:
 		# count number of ranges
 		count = 1
 		start = glyph_maps[0].glyph
-		last = start
+		last_glyph = start
 		for gmap in glyph_maps[1:-1]:
-			if last + 1 != gmap.glyph:
+			if last_glyph + 1 != gmap.glyph:
 				count += 1
-			last = gmap.glyph
+			last_glyph = gmap.glyph
 		headersLen = count * 8
 
 		headers = bytearray ()
 		subtables = bytearray ()
 		start = glyph_maps[0].glyph
 		start_id = 0
-		last = start
+		last_glyph = start
 		last_id = 0
 		for gmap in glyph_maps[1:-1]:
-			if last + 1 != gmap.glyph:
-				headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
+			if last_glyph + 1 != gmap.glyph:
+				headers.extend (struct.pack(">HHL", start, last_glyph, headersLen + len (subtables)))
 				self.push_stream (subtables)
 				self.write_indexSubTable1 (glyph_maps[start_id:last_id+2])
 				self.pop_stream ()
 
 				start = gmap.glyph
 				start_id = last_id + 1
-			last = gmap.glyph
+			last_glyph = gmap.glyph
 			last_id += 1
-		headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
+		headers.extend (struct.pack(">HHL", start, last_glyph, headersLen + len (subtables)))
 		self.push_stream (subtables)
 		self.write_indexSubTable1 (glyph_maps[start_id:last_id+2])
 		self.pop_stream ()
