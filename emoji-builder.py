@@ -135,10 +135,11 @@ class EBDT:
 		self.stream = stream if stream != None else bytearray ()
 		self.options = options
 		self.font_metrics = font_metrics
+		self.base_offset = 0
 		self.base_offset = self.tell ()
 
 	def tell (self):
-		return len (self.stream)
+		return len (self.stream) - self.base_offset
 	def write (self, data):
 		self.stream.extend (data)
 	def data (self):
@@ -149,24 +150,24 @@ class EBDT:
 
 	def start_strike (self, strike_metrics):
 		self.strike_metrics = strike_metrics
-		self.glyph_offsets = []
+		self.glyph_map = []
 
 	def write_glyphs (self, image_format, glyph_filenames, glyphs):
 
 		write_func = self.image_write_func (image_format)
 		for glyph in glyphs:
 			img_file = glyph_filenames[glyph]
-			offset = self.tell () - self.base_offset
+			offset = self.tell ()
 			write_func (PNG (img_file))
-			self.glyph_offsets.append ((glyph, offset))
+			self.glyph_map.append ((glyph, offset, image_format))
 
 	def end_strike (self):
 
-		self.glyph_offsets.append ((None, self.tell ()))
-		glyph_offsets = self.glyph_offsets
-		del self.glyph_offsets
+		self.glyph_map.append ((None, self.tell (), None))
+		glyph_map = self.glyph_map
+		del self.glyph_map
 		del self.strike_metrics
-		return glyph_offsets
+		return glyph_map
 
 	def write_smallGlyphMetrics (self, width, height):
 
@@ -244,131 +245,157 @@ class EBDT:
 		return None
 
 
-
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc_indexSubTable1 (offsets, image_format, stream):
-	stream.extend (struct.pack(">H", 1)) # USHORT indexFormat
-	stream.extend (struct.pack(">H", image_format)) # USHORT imageFormat
-	imageDataOffset = offsets[0][1]
-	stream.extend (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
-	for gid, offset in offsets[:-1]:
-		stream.extend (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
-	stream.extend (struct.pack(">L", offsets[-1][1]))
+class EBLC:
 
-# TODO Add encode_indexSubTable2
+	def __init__ (self, font_metrics, options = (), stream = None):
+		self.stream = stream if stream != None else bytearray ()
+		self.streams = []
+		self.options = options
+		self.font_metrics = font_metrics
+		self.base_offset = 0
+		self.base_offset = self.tell ()
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
-	# sbitLineMetrics
-	# Type	Name
-	# CHAR	ascender
-	# CHAR	descender
-	# BYTE	widthMax
-	# CHAR	caretSlopeNumerator
-	# CHAR	caretSlopeDenominator
-	# CHAR	caretOffset
-	# CHAR	minOriginSB
-	# CHAR	minAdvanceSB
-	# CHAR	maxBeforeBL
-	# CHAR	minAfterBL
-	# CHAR	pad1
-	# CHAR	pad2
-	line_height = div ((font_metrics.ascent + font_metrics.descent) *
-			   strike_metrics.y_ppem, font_metrics.upem)
-	ascent = div (font_metrics.ascent * strike_metrics.y_ppem, font_metrics.upem)
-	descent = - (line_height - ascent)
-	stream.extend (struct.pack ("bbBbbbbbbbbb",
-				    ascent, descent,
-				    strike_metrics.width,
-				    0, 0, 0,
-				    0, 0, 0, 0, # TODO
-				    0, 0))
+	def tell (self):
+		return len (self.stream) - self.base_offset
+	def write (self, data):
+		self.stream.extend (data)
+	def data (self):
+		return self.stream
+	def push_stream (self, stream):
+		self.streams.append (self.stream)
+		self.stream = stream
+	def pop_stream (self):
+		stream = self.stream
+		self.stream = self.streams.pop ()
+		return stream
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc_sbitLineMetrics_vert (stream, font_metrics, strike_metrics):
-	encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics) # XXX
+	def write_header (self, num_strikes):
+		self.write (struct.pack (">L", 0x00020000)) # FIXED version
+		self.write (struct.pack (">L", num_strikes)) # ULONG numSizes
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics, stream):
-	# count number of ranges
-	count = 1
-	start = offsets[0][0]
-	last = start
-	for gid, offset in offsets[1:-1]:
-		if last + 1 != gid:
-			count += 1
-		last = gid
-	headersLen = count * 8
+	def start_strike (self, strike_metrics):
+		self.strike_metrics = strike_metrics
 
-	headers = bytearray ()
-	subtables = bytearray ()
-	start = offsets[0][0]
-	start_id = 0
-	last = start
-	last_id = 0
-	for gid, offset in offsets[1:-1]:
-		if last + 1 != gid:
-			headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-			encode_eblc_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
+	def write_glyphs (self, glyph_map):
 
-			start = gid
-			start_id = last_id + 1
-		last = gid
-		last_id += 1
-	headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-	encode_eblc_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
+		self.write_bitmapSizeTable (glyph_map, glyph_map[0][2])
 
-	indexTablesSize = len (headers) + len (subtables)
-	numberOfIndexSubTables = count
-	bitmapSizeTableSize = 48
+	def end_strike (self):
 
-	# bitmapSizeTable
-	# Type	Name	Description
-	# ULONG	indexSubTableArrayOffset	offset to index subtable from beginning of EBLC.
-	stream.extend (struct.pack(">L", len (stream) + bitmapSizeTableSize))
-	# ULONG	indexTablesSize	number of bytes in corresponding index subtables and array
-	stream.extend (struct.pack(">L", indexTablesSize))
-	# ULONG	numberOfIndexSubTables	an index subtable for each range or format change
-	stream.extend (struct.pack(">L", numberOfIndexSubTables))
-	# ULONG	colorRef	not used; set to 0.
-	stream.extend (struct.pack(">L", 0))
-	# sbitLineMetrics	hori	line metrics for text rendered horizontally
-	encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics)
-	encode_eblc_sbitLineMetrics_vert (stream, font_metrics, strike_metrics)
-	# sbitLineMetrics	vert	line metrics for text rendered vertically
-	# USHORT	startGlyphIndex	lowest glyph index for this size
-	stream.extend (struct.pack(">H", offsets[0][0]))
-	# USHORT	endGlyphIndex	highest glyph index for this size
-	stream.extend (struct.pack(">H", offsets[-2][0]))
-	# BYTE	ppemX	horizontal pixels per Em
-	stream.extend (struct.pack(">B", strike_metrics.x_ppem))
-	# BYTE	ppemY	vertical pixels per Em
-	stream.extend (struct.pack(">B", strike_metrics.y_ppem))
-	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the
-	#			following bitDepth values, as described below: 1, 2, 4, and 8.
-	stream.extend (struct.pack(">B", 32))
-	# CHAR	flags	vertical or horizontal (see bitmapFlags)
-	stream.extend (struct.pack(">b", 0x01))
+		del self.strike_metrics
 
-	stream.extend (headers)
-	stream.extend (subtables)
+	def write_sbitLineMetrics_hori (self):
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblcHeader (num_strikes, stream):
-	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
-	stream.extend (struct.pack(">L", num_strikes)) # ULONG numSizes
+		ascent = self.font_metrics.ascent
+		descent = self.font_metrics.descent
+		upem = self.font_metrics.upem
+		y_ppem = self.strike_metrics.y_ppem
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc (bitmap_offsets, image_format,
-		 font_metrics, strike_metrics,
-		 options, stream):
-	encode_eblcHeader (1, stream)
-	encode_eblc_bitmapSizeTable (bitmap_offsets,
-				     image_format,
-				     font_metrics,
-				     strike_metrics,
-				     stream)
+		# sbitLineMetrics
+		# Type	Name
+		# CHAR	ascender
+		# CHAR	descender
+		# BYTE	widthMax
+		# CHAR	caretSlopeNumerator
+		# CHAR	caretSlopeDenominator
+		# CHAR	caretOffset
+		# CHAR	minOriginSB
+		# CHAR	minAdvanceSB
+		# CHAR	maxBeforeBL
+		# CHAR	minAfterBL
+		# CHAR	pad1
+		# CHAR	pad2
+		line_height = div ((ascent + descent) * y_ppem, upem)
+		ascent = div (ascent * y_ppem, upem)
+		descent = - (line_height - ascent)
+		self.write (struct.pack ("bbBbbbbbbbbb",
+					 ascent, descent,
+					 self.strike_metrics.width,
+					 0, 0, 0,
+					 0, 0, 0, 0, # TODO
+					 0, 0))
 
+	def write_sbitLineMetrics_vert (self):
+		self.write_sbitLineMetrics_hori () # XXX
+
+	def write_indexSubTable1 (self, offsets, image_format):
+		self.write (struct.pack(">H", 1)) # USHORT indexFormat
+		self.write (struct.pack(">H", image_format)) # USHORT imageFormat
+		imageDataOffset = offsets[0][1]
+		self.write (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
+		for gid, offset, glyph_image_format in offsets[:-1]:
+			self.write (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
+		self.write (struct.pack(">L", offsets[-1][1]))
+
+	def write_bitmapSizeTable (self, glyph_map, image_format):
+
+		# count number of ranges
+		count = 1
+		start = glyph_map[0][0]
+		last = start
+		for gid, offset, glyph_image_format in glyph_map[1:-1]:
+			if last + 1 != gid:
+				count += 1
+			last = gid
+		headersLen = count * 8
+
+		headers = bytearray ()
+		subtables = bytearray ()
+		start = glyph_map[0][0]
+		start_id = 0
+		last = start
+		last_id = 0
+		for gid, offset, glyph_image_format in glyph_map[1:-1]:
+			if last + 1 != gid:
+				headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
+				self.push_stream (subtables)
+				self.write_indexSubTable1 (glyph_map[start_id:last_id+2], image_format)
+				self.pop_stream ()
+
+				start = gid
+				start_id = last_id + 1
+			last = gid
+			last_id += 1
+		headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
+		self.push_stream (subtables)
+		self.write_indexSubTable1 (glyph_map[start_id:last_id+2], image_format)
+		self.pop_stream ()
+
+		indexTablesSize = len (headers) + len (subtables)
+		numberOfIndexSubTables = count
+		bitmapSizeTableSize = 48
+
+		# bitmapSizeTable
+		# Type	Name	Description
+		# ULONG	indexSubTableArrayOffset	offset to index subtable from beginning of EBLC.
+		self.write (struct.pack(">L", self.tell () + bitmapSizeTableSize))
+		# ULONG	indexTablesSize	number of bytes in corresponding index subtables and array
+		self.write (struct.pack(">L", indexTablesSize))
+		# ULONG	numberOfIndexSubTables	an index subtable for each range or format change
+		self.write (struct.pack(">L", numberOfIndexSubTables))
+		# ULONG	colorRef	not used; set to 0.
+		self.write (struct.pack(">L", 0))
+		# sbitLineMetrics	hori	line metrics for text rendered horizontally
+		self.write_sbitLineMetrics_hori ()
+		self.write_sbitLineMetrics_vert ()
+		# sbitLineMetrics	vert	line metrics for text rendered vertically
+		# USHORT	startGlyphIndex	lowest glyph index for this size
+		self.write (struct.pack(">H", glyph_map[0][0]))
+		# USHORT	endGlyphIndex	highest glyph index for this size
+		self.write (struct.pack(">H", glyph_map[-2][0]))
+		# BYTE	ppemX	horizontal pixels per Em
+		self.write (struct.pack(">B", self.strike_metrics.x_ppem))
+		# BYTE	ppemY	vertical pixels per Em
+		self.write (struct.pack(">B", self.strike_metrics.y_ppem))
+		# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the
+		#			following bitDepth values, as described below: 1, 2, 4, and 8.
+		self.write (struct.pack(">B", 32))
+		# CHAR	flags	vertical or horizontal (see bitmapFlags)
+		self.write (struct.pack(">b", 0x01))
+
+		self.write (headers)
+		self.write (subtables)
 
 
 def main (argv):
@@ -473,14 +500,16 @@ dropped from the PNG images when embedding.  By default they are dropped.
 	ebdt.write_header ()
 	ebdt.start_strike (strike_metrics)
 	ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
-	bitmap_offsets = ebdt.end_strike ()
+	glyph_map = ebdt.end_strike ()
 	ebdt = ebdt.data ()
 	print "EBDT table synthesized: %d bytes." % len (ebdt)
 
-	eblc = bytearray ()
-	encode_eblc (bitmap_offsets, image_format,
-		     font_metrics, strike_metrics,
-		     options, eblc)
+	eblc = EBLC (font_metrics, options)
+	eblc.write_header (1)
+	eblc.start_strike (strike_metrics)
+	eblc.write_glyphs (glyph_map)
+	eblc.end_strike ()
+	eblc = eblc.data ()
 	print "EBLC table synthesized: %d bytes." % len (eblc)
 
 	add_font_table (font, 'CBDT', ebdt)
