@@ -17,43 +17,8 @@
 # Google Author(s): Behdad Esfahbod, Stuart Gill
 #
 
-import sys, glob, re, os, struct, io, cairo
-from fontTools import ttx, ttLib
 
-drop_outlines = True
-if "-O" in sys.argv:
-	drop_outlines = False
-	sys.argv.remove ("-D")
-
-uncompressed = False
-if "-U" in sys.argv:
-	uncompressed = True
-	sys.argv.remove ("-U")
-
-if len (sys.argv) != 4:
-	print >>sys.stderr, """
-Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
-
-This will search for files that have img-prefix followed by a hex number,
-and end in ".png".  For example, if img-prefix is "icons/", then files
-with names like "icons/1f4A9.png" will be loaded.  All images must have
-the same size (preferably square).
-
-The script then embeds color bitmaps in the font, for characters that the
-font already supports, and writes the new font out.
-
-If the -U parameter is given, uncompressed images are stored (imageFormat=1).
-By default, PNG images are stored (imageFormat=17).
-
-If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
-related tables are NOT dropped from the font.  By default they are dropped.
-"""
-	sys.exit (1)
-
-img_prefix = sys.argv[1]
-font_file = sys.argv[2]
-out_file = sys.argv[3]
-del sys.argv
+import struct, cairo
 
 
 def div (a, b):
@@ -71,20 +36,6 @@ class StrikeMetrics:
 		self.height = bitmap_height # in pixels
 		self.advance = advance # in font units
 		self.x_ppem = self.y_ppem = div (bitmap_width * font_metrics.upem, advance)
-
-
-
-def add_font_table (font, tag, data):
-	tab = ttLib.tables.DefaultTable.DefaultTable (tag)
-	tab.data = str(data)
-	font[tag] = tab
-
-def drop_outline_tables (font):
-	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
-		try:
-			del font[tag]
-		except KeyError:
-			pass
 
 
 
@@ -156,46 +107,6 @@ encode_ebdt_image_funcs = {
 	17 : encode_ebdt_format17,
 }
 
-
-img_files = {}
-for img_file in glob.glob ("%s*.png" % img_prefix):
-	uchar = int (img_file[len (img_prefix):-4], 16)
-	img_files[uchar] = img_file
-if not img_files:
-	raise Exception ("No image files found: '%s*.png'" % img_prefix)
-print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
-
-font = ttx.TTFont (font_file)
-print "Loaded font '%s'." % font_file
-
-
-glyph_metrics = font['hmtx'].metrics
-unicode_cmap = font['cmap'].getcmap (3, 10)
-
-glyph_imgs = {}
-advance = width = height = 0
-for uchar, img_file in img_files.items ():
-	if uchar in unicode_cmap.cmap:
-		glyph_name = unicode_cmap.cmap[uchar]
-		glyph_id = font.getGlyphID (glyph_name)
-		glyph_imgs[glyph_id] = img_file
-
-		advance += glyph_metrics[glyph_name][0]
-		img = cairo.ImageSurface.create_from_png (img_file)
-		width += img.get_width ()
-		height += img.get_height ()
-
-glyphs = sorted (glyph_imgs.keys ())
-if not glyphs:
-	raise Exception ("No common characteres found between font and image dir.")
-print "Embedding images for %d glyphs." % len (glyphs)
-
-advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
-
-font_metrics = FontMetrics (font['head'].unitsPerEm, font['hhea'].ascent, -font['hhea'].descent)
-
-strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
-
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, stream):
 	bitmap_offsets = []
@@ -211,16 +122,10 @@ def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, stream):
 	bitmap_offsets.append ((None, len (stream)))
 	return bitmap_offsets
 
-image_format = 1 if uncompressed else 17
-encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
-
-ebdt = bytearray ()
-bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, ebdt)
-print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_indexSubTable1 (offsets, image_format, stream):
+def encode_eblc_indexSubTable1 (offsets, image_format, stream):
 	stream.extend (struct.pack(">H", 1)) # USHORT indexFormat
 	stream.extend (struct.pack(">H", image_format)) # USHORT imageFormat
 	imageDataOffset = offsets[0][1]
@@ -232,7 +137,7 @@ def encode_indexSubTable1 (offsets, image_format, stream):
 # TODO Add encode_indexSubTable2
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
+def encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	# sbitLineMetrics
 	# Type	Name
 	# CHAR	ascender
@@ -247,17 +152,23 @@ def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	# CHAR	minAfterBL
 	# CHAR	pad1
 	# CHAR	pad2
-	line_height = div ((font_metrics.ascent + font_metrics.descent) * strike_metrics.y_ppem, font_metrics.upem)
+	line_height = div ((font_metrics.ascent + font_metrics.descent) *
+			   strike_metrics.y_ppem, font_metrics.upem)
 	ascent = div (font_metrics.ascent * strike_metrics.y_ppem, font_metrics.upem)
 	descent = - (line_height - ascent)
-	stream.extend (struct.pack ("bbBbbbbbbbbb", ascent, descent, strike_metrics.width, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+	stream.extend (struct.pack ("bbBbbbbbbbbb",
+				    ascent, descent,
+				    strike_metrics.width,
+				    0, 0, 0,
+				    0, 0, 0, 0, # TODO
+				    0, 0))
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_sbitLineMetrics_vert (stream, font_metrics, strike_metrics):
-	encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics) # XXX
+def encode_eblc_sbitLineMetrics_vert (stream, font_metrics, strike_metrics):
+	encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics) # XXX
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics, stream):
+def encode_eblc_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics, stream):
 	# count number of ranges
 	count = 1
 	start = offsets[0][0]
@@ -277,14 +188,14 @@ def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics,
 	for gid, offset in offsets[1:-1]:
 		if last + 1 != gid:
 			headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-			encode_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
+			encode_eblc_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
 
 			start = gid
 			start_id = last_id + 1
 		last = gid
 		last_id += 1
 	headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
-	encode_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
+	encode_eblc_indexSubTable1 (offsets[start_id:last_id+2], image_format, subtables)
 
 	indexTablesSize = len (headers) + len (subtables)
 	numberOfIndexSubTables = count
@@ -301,8 +212,8 @@ def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics,
 	# ULONG	colorRef	not used; set to 0.
 	stream.extend (struct.pack(">L", 0))
 	# sbitLineMetrics	hori	line metrics for text rendered horizontally
-	encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics)
-	encode_sbitLineMetrics_vert (stream, font_metrics, strike_metrics)
+	encode_eblc_sbitLineMetrics_hori (stream, font_metrics, strike_metrics)
+	encode_eblc_sbitLineMetrics_vert (stream, font_metrics, strike_metrics)
 	# sbitLineMetrics	vert	line metrics for text rendered vertically
 	# USHORT	startGlyphIndex	lowest glyph index for this size
 	stream.extend (struct.pack(">H", offsets[0][0]))
@@ -329,8 +240,109 @@ def encode_eblcHeader (num_strikes, stream):
 # http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_eblc (offsets, image_format, font_metrics, strike_metrics, stream):
 	encode_eblcHeader (1, stream)
-	encode_bitmapSizeTable (bitmap_offsets, image_format, font_metrics, strike_metrics, stream)
+	encode_eblc_bitmapSizeTable (bitmap_offsets,
+				     image_format,
+				     font_metrics,
+				     strike_metrics,
+				     stream)
 	return eblc
+
+
+
+import glob, sys
+from fontTools import ttx, ttLib
+
+drop_outlines = True
+if "-O" in sys.argv:
+	drop_outlines = False
+	sys.argv.remove ("-D")
+
+uncompressed = False
+if "-U" in sys.argv:
+	uncompressed = True
+	sys.argv.remove ("-U")
+
+if len (sys.argv) != 4:
+	print >>sys.stderr, """
+Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
+
+This will search for files that have img-prefix followed by a hex number,
+and end in ".png".  For example, if img-prefix is "icons/", then files
+with names like "icons/1f4A9.png" will be loaded.  All images must have
+the same size (preferably square).
+
+The script then embeds color bitmaps in the font, for characters that the
+font already supports, and writes the new font out.
+
+If the -U parameter is given, uncompressed images are stored (imageFormat=1).
+By default, PNG images are stored (imageFormat=17).
+
+If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
+related tables are NOT dropped from the font.  By default they are dropped.
+"""
+	sys.exit (1)
+
+img_prefix = sys.argv[1]
+font_file = sys.argv[2]
+out_file = sys.argv[3]
+del sys.argv
+
+def add_font_table (font, tag, data):
+	tab = ttLib.tables.DefaultTable.DefaultTable (tag)
+	tab.data = str(data)
+	font[tag] = tab
+
+def drop_outline_tables (font):
+	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
+		try:
+			del font[tag]
+		except KeyError:
+			pass
+
+img_files = {}
+for img_file in glob.glob ("%s*.png" % img_prefix):
+	uchar = int (img_file[len (img_prefix):-4], 16)
+	img_files[uchar] = img_file
+if not img_files:
+	raise Exception ("No image files found: '%s*.png'" % img_prefix)
+print "Found images for %d characters in '%s*.png'." % (len (img_files), img_prefix)
+
+font = ttx.TTFont (font_file)
+print "Loaded font '%s'." % font_file
+
+glyph_metrics = font['hmtx'].metrics
+unicode_cmap = font['cmap'].getcmap (3, 10)
+
+glyph_imgs = {}
+advance = width = height = 0
+for uchar, img_file in img_files.items ():
+	if uchar in unicode_cmap.cmap:
+		glyph_name = unicode_cmap.cmap[uchar]
+		glyph_id = font.getGlyphID (glyph_name)
+		glyph_imgs[glyph_id] = img_file
+
+		advance += glyph_metrics[glyph_name][0]
+		img = cairo.ImageSurface.create_from_png (img_file)
+		width += img.get_width ()
+		height += img.get_height ()
+
+glyphs = sorted (glyph_imgs.keys ())
+if not glyphs:
+	raise Exception ("No common characteres found between font and image dir.")
+print "Embedding images for %d glyphs." % len (glyphs)
+
+advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
+font_metrics = FontMetrics (font['head'].unitsPerEm,
+			    font['hhea'].ascent,
+			    -font['hhea'].descent)
+strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+
+image_format = 1 if uncompressed else 17
+encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
+
+ebdt = bytearray ()
+bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs, ebdt)
+print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 eblc = bytearray ()
 encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
