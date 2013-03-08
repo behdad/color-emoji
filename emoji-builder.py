@@ -126,6 +126,11 @@ class StrikeMetrics:
 		self.advance = advance # in font units
 		self.x_ppem = self.y_ppem = div (bitmap_width * font_metrics.upem, advance)
 
+class GlyphMap:
+	def __init__ (self, glyph, offset, image_format):
+		self.glyph = glyph
+		self.offset = offset
+		self.image_format = image_format
 
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
@@ -150,7 +155,7 @@ class EBDT:
 
 	def start_strike (self, strike_metrics):
 		self.strike_metrics = strike_metrics
-		self.glyph_map = []
+		self.glyph_maps = []
 
 	def write_glyphs (self, image_format, glyph_filenames, glyphs):
 
@@ -159,15 +164,15 @@ class EBDT:
 			img_file = glyph_filenames[glyph]
 			offset = self.tell ()
 			write_func (PNG (img_file))
-			self.glyph_map.append ((glyph, offset, image_format))
+			self.glyph_maps.append (GlyphMap (glyph, offset, image_format))
 
 	def end_strike (self):
 
-		self.glyph_map.append ((None, self.tell (), None))
-		glyph_map = self.glyph_map
-		del self.glyph_map
+		self.glyph_maps.append (GlyphMap (None, self.tell (), None))
+		glyph_maps = self.glyph_maps
+		del self.glyph_maps
 		del self.strike_metrics
-		return glyph_map
+		return glyph_maps
 
 	def write_smallGlyphMetrics (self, width, height):
 
@@ -274,15 +279,9 @@ class EBLC:
 		self.write (struct.pack (">L", 0x00020000)) # FIXED version
 		self.write (struct.pack (">L", num_strikes)) # ULONG numSizes
 
-	def start_strike (self, strike_metrics):
+	def write_strike (self, strike_metrics, glyph_maps):
 		self.strike_metrics = strike_metrics
-
-	def write_glyphs (self, glyph_map):
-
-		self.write_bitmapSizeTable (glyph_map, glyph_map[0][2])
-
-	def end_strike (self):
-
+		self.write_bitmapSizeTable (glyph_maps)
 		del self.strike_metrics
 
 	def write_sbitLineMetrics_hori (self):
@@ -319,47 +318,51 @@ class EBLC:
 	def write_sbitLineMetrics_vert (self):
 		self.write_sbitLineMetrics_hori () # XXX
 
-	def write_indexSubTable1 (self, offsets, image_format):
+	def write_indexSubTable1 (self, glyph_maps):
+
+		image_format = glyph_maps[0].image_format
+
 		self.write (struct.pack(">H", 1)) # USHORT indexFormat
 		self.write (struct.pack(">H", image_format)) # USHORT imageFormat
-		imageDataOffset = offsets[0][1]
+		imageDataOffset = glyph_maps[0].offset
 		self.write (struct.pack(">L", imageDataOffset)) # ULONG imageDataOffset
-		for gid, offset, glyph_image_format in offsets[:-1]:
-			self.write (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
-		self.write (struct.pack(">L", offsets[-1][1]))
+		for gmap in glyph_maps[:-1]:
+			self.write (struct.pack(">L", gmap.offset - imageDataOffset)) # ULONG offsetArray
+			assert gmap.image_format == image_format
+		self.write (struct.pack(">L", glyph_maps[-1].offset))
 
-	def write_bitmapSizeTable (self, glyph_map, image_format):
+	def write_bitmapSizeTable (self, glyph_maps):
 
 		# count number of ranges
 		count = 1
-		start = glyph_map[0][0]
+		start = glyph_maps[0].glyph
 		last = start
-		for gid, offset, glyph_image_format in glyph_map[1:-1]:
-			if last + 1 != gid:
+		for gmap in glyph_maps[1:-1]:
+			if last + 1 != gmap.glyph:
 				count += 1
-			last = gid
+			last = gmap.glyph
 		headersLen = count * 8
 
 		headers = bytearray ()
 		subtables = bytearray ()
-		start = glyph_map[0][0]
+		start = glyph_maps[0].glyph
 		start_id = 0
 		last = start
 		last_id = 0
-		for gid, offset, glyph_image_format in glyph_map[1:-1]:
-			if last + 1 != gid:
+		for gmap in glyph_maps[1:-1]:
+			if last + 1 != gmap.glyph:
 				headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
 				self.push_stream (subtables)
-				self.write_indexSubTable1 (glyph_map[start_id:last_id+2], image_format)
+				self.write_indexSubTable1 (glyph_maps[start_id:last_id+2])
 				self.pop_stream ()
 
-				start = gid
+				start = gmap.glyph
 				start_id = last_id + 1
-			last = gid
+			last = gmap.glyph
 			last_id += 1
 		headers.extend (struct.pack(">HHL", start, last, headersLen + len (subtables)))
 		self.push_stream (subtables)
-		self.write_indexSubTable1 (glyph_map[start_id:last_id+2], image_format)
+		self.write_indexSubTable1 (glyph_maps[start_id:last_id+2])
 		self.pop_stream ()
 
 		indexTablesSize = len (headers) + len (subtables)
@@ -381,9 +384,9 @@ class EBLC:
 		self.write_sbitLineMetrics_vert ()
 		# sbitLineMetrics	vert	line metrics for text rendered vertically
 		# USHORT	startGlyphIndex	lowest glyph index for this size
-		self.write (struct.pack(">H", glyph_map[0][0]))
+		self.write (struct.pack(">H", glyph_maps[0].glyph))
 		# USHORT	endGlyphIndex	highest glyph index for this size
-		self.write (struct.pack(">H", glyph_map[-2][0]))
+		self.write (struct.pack(">H", glyph_maps[-2].glyph))
 		# BYTE	ppemX	horizontal pixels per Em
 		self.write (struct.pack(">B", self.strike_metrics.x_ppem))
 		# BYTE	ppemY	vertical pixels per Em
@@ -500,15 +503,13 @@ dropped from the PNG images when embedding.  By default they are dropped.
 	ebdt.write_header ()
 	ebdt.start_strike (strike_metrics)
 	ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
-	glyph_map = ebdt.end_strike ()
+	glyph_maps = ebdt.end_strike ()
 	ebdt = ebdt.data ()
 	print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 	eblc = EBLC (font_metrics, options)
 	eblc.write_header (1)
-	eblc.start_strike (strike_metrics)
-	eblc.write_glyphs (glyph_map)
-	eblc.end_strike ()
+	eblc.write_strike (strike_metrics, glyph_maps)
 	eblc = eblc.data ()
 	print "EBLC table synthesized: %d bytes." % len (eblc)
 
