@@ -296,14 +296,14 @@ def main (argv):
 	import glob
 	from fontTools import ttx, ttLib
 
-	drop_outlines = True
+	options = []
+
 	if "-O" in argv:
-		drop_outlines = False
+		options.append ('keep_outlines')
 		argv.remove ("-D")
 
-	uncompressed = False
 	if "-U" in argv:
-		uncompressed = True
+		options.append ('uncompressed')
 		argv.remove ("-U")
 
 	if len (argv) != 4:
@@ -381,7 +381,7 @@ def main (argv):
 				    -font['hhea'].descent)
 	strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
-	image_format = 1 if uncompressed else 17
+	image_format = 1 if 'uncompressed' in options else 17
 	encode_ebdt_image_func = encode_ebdt_image_funcs[image_format]
 
 	ebdt = bytearray ()
@@ -396,7 +396,7 @@ def main (argv):
 	add_font_table (font, 'CBDT', ebdt)
 	add_font_table (font, 'CBLC', eblc)
 
-	if drop_outlines:
+	if 'keep_outlines' not in options:
 		drop_outline_tables (font)
 		print "Dropped outline ('glyf', 'CFF ') and related tables."
 
