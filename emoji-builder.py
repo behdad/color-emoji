@@ -133,8 +133,8 @@ class GlyphMap:
 		self.image_format = image_format
 
 
-# http://www.microsoft.com/typography/otspec/ebdt.htm
-class EBDT:
+# Based on http://www.microsoft.com/typography/otspec/ebdt.htm
+class CBDT:
 
 	def __init__ (self, font_metrics, options = (), stream = None):
 		self.stream = stream if stream != None else bytearray ()
@@ -250,8 +250,8 @@ class EBDT:
 		return None
 
 
-# http://www.microsoft.com/typography/otspec/eblc.htm
-class EBLC:
+# Based on http://www.microsoft.com/typography/otspec/eblc.htm
+class CBLC:
 
 	def __init__ (self, font_metrics, options = (), stream = None):
 		self.stream = stream if stream != None else bytearray ()
@@ -375,7 +375,7 @@ class EBLC:
 
 		# bitmapSizeTable
 		# Type	Name	Description
-		# ULONG	indexSubTableArrayOffset	offset to index subtable from beginning of EBLC.
+		# ULONG	indexSubTableArrayOffset	offset to index subtable from beginning of CBLC.
 		self.write (struct.pack(">L", self.tell () + bitmapSizeTableSize))
 		# ULONG	indexTablesSize	number of bytes in corresponding index subtables and array
 		self.write (struct.pack(">L", indexTablesSize))
@@ -503,19 +503,19 @@ dropped from the PNG images when embedding.  By default they are dropped.
 
 	image_format = 1 if 'uncompressed' in options else 17
 
-	ebdt = EBDT (font_metrics, options)
+	ebdt = CBDT (font_metrics, options)
 	ebdt.write_header ()
 	ebdt.start_strike (strike_metrics)
 	ebdt.write_glyphs (image_format, glyph_imgs, glyphs)
 	glyph_maps = ebdt.end_strike ()
 	ebdt = ebdt.data ()
-	print "EBDT table synthesized: %d bytes." % len (ebdt)
+	print "CBDT table synthesized: %d bytes." % len (ebdt)
 
-	eblc = EBLC (font_metrics, options)
+	eblc = CBLC (font_metrics, options)
 	eblc.write_header (1)
 	eblc.write_strike (strike_metrics, glyph_maps)
 	eblc = eblc.data ()
-	print "EBLC table synthesized: %d bytes." % len (eblc)
+	print "CBLC table synthesized: %d bytes." % len (eblc)
 
 	add_font_table (font, 'CBDT', ebdt)
 	add_font_table (font, 'CBLC', eblc)
