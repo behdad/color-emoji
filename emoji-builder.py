@@ -20,9 +20,9 @@
 import sys, glob, re, os, struct, io, cairo
 from fontTools import ttx, ttLib
 
-drop_glyf = True
-if "-D" in sys.argv:
-	drop_glyf = False
+drop_outlines = True
+if "-O" in sys.argv:
+	drop_outlines = False
 	sys.argv.remove ("-D")
 
 uncompressed = False
@@ -32,7 +32,7 @@ if "-U" in sys.argv:
 
 if len (sys.argv) != 4:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-D] [-U] img-prefix font.ttf out-font.ttf
+Usage: emjoi-builder.py [-O] [-U] img-prefix font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
@@ -45,8 +45,8 @@ font already supports, and writes the new font out.
 If the -U parameter is given, uncompressed images are stored (imageFormat=1).
 By default, PNG images are stored (imageFormat=17).
 
-If the -D parameter is given, the 'glyf', 'CFF ',  and related tables are
-NOT dropped from the font.  By default they are dropped.
+If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
+related tables are NOT dropped from the font.  By default they are dropped.
 """
 	sys.exit (1)
 
@@ -55,6 +55,38 @@ font_file = sys.argv[2]
 out_file = sys.argv[3]
 del sys.argv
 
+
+
+class FontMetrics:
+	def __init__ (self, upem, ascent, descent):
+		self.upem = upem
+		self.ascent = ascent
+		self.descent = descent
+
+class StrikeMetrics:
+	def __init__ (self, font_metrics, advance, bitmap_width, bitmap_height):
+		self.width = bitmap_width # in pixels
+		self.height = bitmap_height # in pixels
+		self.advance = advance # in font units
+		self.x_ppem = self.y_ppem = int (round (float (bitmap_width) * font_metrics.upem / advance))
+
+
+
+def add_font_table (font, tag, data):
+	tab = ttLib.tables.DefaultTable.DefaultTable (tag)
+	tab.data = str(data)
+	font[tag] = tab
+
+def drop_outline_tables (font):
+	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
+		try:
+			del font[tag]
+		except KeyError:
+			pass
+
+
+
+# http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, stream):
 	x_bearing = 0
 	# center vertically
@@ -158,22 +190,9 @@ print "Embedding images for %d glyphs." % len (glyphs)
 
 advance, width, height = (int (round (float (x) / len (glyphs))) for x in (advance, width, height))
 
-class FontMetrics:
-	def __init__ (self, upem, ascent, descent):
-		self.upem = upem
-		self.ascent = ascent
-		self.descent = descent
-
 font_metrics = FontMetrics (font['head'].unitsPerEm,
 			    font['hhea'].ascent,
 			    -font['hhea'].descent)
-
-class StrikeMetrics:
-	def __init__ (self, font_metrics, advance, bitmap_width, bitmap_height):
-		self.width = bitmap_width # in pixels
-		self.height = bitmap_height # in pixels
-		self.advance = advance # in font units
-		self.x_ppem = self.y_ppem = int (round (float (bitmap_width) * font_metrics.upem / advance))
 
 strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
 
@@ -195,6 +214,7 @@ print
 print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 
+# http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_indexSubTable1 (offsets, image_format, stream):
 	stream.extend (struct.pack(">H", 1)) # USHORT indexFormat
 	stream.extend (struct.pack(">H", image_format)) # USHORT imageFormat
@@ -204,6 +224,9 @@ def encode_indexSubTable1 (offsets, image_format, stream):
 		stream.extend (struct.pack(">L", offset - imageDataOffset)) # ULONG offsetArray
 	stream.extend (struct.pack(">L", offsets[-1][1]))
 
+# TODO Add encode_indexSubTable2
+
+# http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	# sbitLineMetrics
 	# Type	Name
@@ -224,9 +247,9 @@ def encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics):
 	descent = - (line_height - ascent)
 	stream.extend (struct.pack ("bbBbbbbbbbbb", ascent, descent, strike_metrics.width, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
+# http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_sbitLineMetrics_vert (stream, font_metrics, strike_metrics):
 	encode_sbitLineMetrics_hori (stream, font_metrics, strike_metrics) # XXX
-
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
 def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics, stream):
@@ -284,7 +307,8 @@ def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics,
 	stream.extend (struct.pack(">B", strike_metrics.x_ppem))
 	# BYTE	ppemY	vertical pixels per Em
 	stream.extend (struct.pack(">B", strike_metrics.y_ppem))
-	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the following bitDepth values, as described below: 1, 2, 4, and 8.
+	# BYTE	bitDepth	the Microsoft rasterizer v.1.7 or greater supports the
+	#			following bitDepth values, as described below: 1, 2, 4, and 8.
 	stream.extend (struct.pack(">B", 32))
 	# CHAR	flags	vertical or horizontal (see bitmapFlags)
 	stream.extend (struct.pack(">b", 0x01))
@@ -292,26 +316,27 @@ def encode_bitmapSizeTable (offsets, image_format, font_metrics, strike_metrics,
 	stream.extend (headers)
 	stream.extend (subtables)
 
-eblc = bytearray (struct.pack (">L", 0x00020000))
-eblc.extend (struct.pack(">L", 1)) # ULONG numSizes
-encode_bitmapSizeTable (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
+# http://www.microsoft.com/typography/otspec/eblc.htm
+def encode_eblcHeader (num_strikes, stream):
+	stream.extend (struct.pack (">L", 0x00020000))
+	stream.extend (struct.pack(">L", num_strikes)) # ULONG numSizes
+
+# http://www.microsoft.com/typography/otspec/eblc.htm
+def encode_eblc (offsets, image_format, font_metrics, strike_metrics, stream):
+	encode_eblcHeader (1, stream)
+	encode_bitmapSizeTable (bitmap_offsets, image_format, font_metrics, strike_metrics, stream)
+	return eblc
+
+eblc = bytearray ()
+encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
 print "EBLC table synthesized: %d bytes." % len (eblc)
 
-def add_table (font, tag, data):
-	tab = ttLib.tables.DefaultTable.DefaultTable (tag)
-	tab.data = str(data)
-	font[tag] = tab
+add_font_table (font, 'CBDT', ebdt)
+add_font_table (font, 'CBLC', eblc)
 
-add_table (font, 'CBDT', ebdt)
-add_table (font, 'CBLC', eblc)
-
-if drop_glyf:
-	for tag in ['cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG']:
-		try:
-			del font[tag]
-		except KeyError:
-			pass
-	print "Dropped 'glyf', 'CFF ', and related tables."
+if drop_outlines:
+	drop_outline_tables (font)
+	print "Dropped outline ('glyf', 'CFF ') and related tables."
 
 font.save (out_file)
 print "Output font '%s' generated." % out_file
