@@ -428,43 +428,48 @@ def main (argv):
 
 	options = []
 
-	if "-O" in argv:
-		options.append ('keep_outlines')
-		argv.remove ("-D")
+	option_map = {
+		"-V": "verbose",
+		"-O": "keep_outlines",
+		"-U": "uncompressed",
+		"-C": "keep_chunks",
+	}
 
-	if "-U" in argv:
-		options.append ('uncompressed')
-		argv.remove ("-U")
-
-	if "-C" in argv:
-		options.append ('keep_chunks')
-		argv.remove ("-C")
+	for key, value in option_map.items ():
+		if key in argv:
+			options.append (value)
+			argv.remove (key)
 
 	if len (argv) < 4:
 		print >>sys.stderr, """
 Usage:
 
-  emjoi-builder.py [-O] [-U] [-A] font.ttf out-font.ttf strike-img-prefix...
+emjoi-builder.py [-v] [-O] [-U] [-A] font.ttf out-font.ttf strike-prefix...
 
-This will search for files that have strike-img-prefix followed by a hex
-number, and end in ".png".  For example, if strike-img-prefix is "icons/uni",
-then files with names like "icons/uni1f4A9.png" will be loaded.  All images
-for the same strike should have the same size for best results.
+This will search for files that have strike-prefix followed
+by a hex number, and end in ".png".  For example, if strike-prefix
+is "icons/uni", then files with names like "icons/uni1f4A9.png" will
+be loaded.  All images for the same strike should have the same size
+for best results.
 
-If multiple strike-img-prefix parameters are provided, multiple strikes
-will be embedded, in the order provided.
+If multiple strike-prefix parameters are provided, multiple
+strikes will be embedded, in the order provided.
 
-The script then embeds color bitmaps in the font, for characters that the
-font already supports, and writes the new font out.
+The script then embeds color bitmaps in the font, for characters
+that the font already supports, and writes the new font out.
 
-If the -U parameter is given, uncompressed images are stored (imageFormat=1).
+If -V is given, verbose mode is enabled.
+
+If -U is given, uncompressed images are stored (imageFormat=1).
 By default, PNG images are stored (imageFormat=17).
 
-If the -O parameter is given, the outline tables ('glyf', 'CFF ') and
-related tables are NOT dropped from the font.  By default they are dropped.
+If -O is given, the outline tables ('glyf', 'CFF ') and
+related tables are NOT dropped from the font.
+By default they are dropped.
 
-If the -C parameter is given, unused chunks (color profile, etc) are NOT
-dropped from the PNG images when embedding.  By default they are dropped.
+If -C is given, unused chunks (color profile, etc) are NOT
+dropped from the PNG images when embedding.
+By default they are dropped.
 """
 		sys.exit (1)
 
@@ -494,6 +499,8 @@ dropped from the PNG images when embedding.  By default they are dropped.
 	font_metrics = FontMetrics (font['head'].unitsPerEm,
 				    font['hhea'].ascent,
 				    -font['hhea'].descent)
+	print "Font metrics: upem=%d ascent=%d descent=%d." % \
+	      (font_metrics.upem, font_metrics.ascent, font_metrics.descent)
 	glyph_metrics = font['hmtx'].metrics
 	unicode_cmap = font['cmap'].getcmap (3, 10)
 	if not unicode_cmap:
@@ -530,6 +537,8 @@ dropped from the PNG images when embedding.  By default they are dropped.
 				glyph_name = unicode_cmap.cmap[uchar]
 				glyph_id = font.getGlyphID (glyph_name)
 				glyph_imgs[glyph_id] = img_file
+				if "verbose" in options:
+					print "Matched U+%04X: id=%d name=%s image=%s" % (uchar, glyph_id, glyph_name, img_file)
 
 				advance += glyph_metrics[glyph_name][0]
 				w, h = PNG (img_file).get_size ()
@@ -543,6 +552,7 @@ dropped from the PNG images when embedding.  By default they are dropped.
 
 		advance, width, height = (div (x, len (glyphs)) for x in (advance, width, height))
 		strike_metrics = StrikeMetrics (font_metrics, advance, width, height)
+		print "Strike ppem set to %d." % (strike_metrics.y_ppem)
 
 		ebdt.start_strike (strike_metrics)
 		ebdt.write_glyphs (glyphs, glyph_imgs, image_format)
