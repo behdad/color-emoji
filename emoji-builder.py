@@ -20,19 +20,19 @@
 import sys, glob, re, os, struct, io, cairo
 from fontTools import ttx, ttLib
 
-drop_glyf = False
-if "-d" in sys.argv:
-	drop_glyf = True
-	sys.argv.remove ("-d")
+drop_glyf = True
+if "-D" in sys.argv:
+	drop_glyf = False
+	sys.argv.remove ("-D")
 
 uncompressed = False
-if "-u" in sys.argv:
+if "-U" in sys.argv:
 	uncompressed = True
-	sys.argv.remove ("-u")
+	sys.argv.remove ("-U")
 
 if len (sys.argv) != 4:
 	print >>sys.stderr, """
-Usage: emjoi-builder.py [-d] [-u] img-prefix font.ttf out-font.ttf
+Usage: emjoi-builder.py [-D] [-U] img-prefix font.ttf out-font.ttf
 
 This will search for files that have img-prefix followed by a hex number,
 and end in ".png".  For example, if img-prefix is "icons/", then files
@@ -42,11 +42,11 @@ the same size (preferably square).
 The script then embeds color bitmaps in the font, for characters that the
 font already supports, and writes the new font out.
 
-If the -u parameter is given, uncompressed images are stored (imageFormat=1).
-Otherwise, PNG images are stored (imageFormat=17).
+If the -U parameter is given, uncompressed images are stored (imageFormat=1).
+By default, PNG images are stored (imageFormat=17).
 
-If the -d parameter is given, the 'glyf', 'CFF ',  and related tables are
-dropped from the font.
+If the -D parameter is given, the 'glyf', 'CFF ',  and related tables are
+NOT dropped from the font.  By default they are dropped.
 """
 	sys.exit (1)
 
