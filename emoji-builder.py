@@ -98,7 +98,9 @@ def encode_smallGlyphMetrics (font_metrics, strike_metrics, width, height, strea
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 
-def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
+def encode_ebdt_format1 (img_file,
+			 font_metrics, strike_metrics,
+			 options, stream):
 
 	import cairo
 
@@ -130,7 +132,9 @@ def encode_ebdt_format1 (img_file, font_metrics, strike_metrics, stream):
 		offset += stride
 
 # XXX http://www.microsoft.com/typography/otspec/ebdt.htm
-def encode_ebdt_format17 (img_file, font_metrics, strike_metrics, stream):
+def encode_ebdt_format17 (img_file,
+			  font_metrics, strike_metrics,
+			  options, stream):
 
 	width, height = png_get_size (img_file)
 	img_file.seek (0)
@@ -150,7 +154,8 @@ encode_ebdt_image_funcs = {
 
 # http://www.microsoft.com/typography/otspec/ebdt.htm
 def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
-		 font_metrics, strike_metrics, stream):
+		 font_metrics, strike_metrics,
+		 options, stream):
 	bitmap_offsets = []
 	base_offset = len (stream)
 	stream.extend (struct.pack (">L", 0x00020000)) # FIXED version
@@ -161,7 +166,7 @@ def encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
 		offset = len (stream) - base_offset
 		encode_ebdt_image_func (open (img_file, 'rb'),
 					font_metrics, strike_metrics,
-					stream)
+					options, stream)
 		bitmap_offsets.append ((glyph, offset))
 	bitmap_offsets.append ((None, len (stream)))
 	return bitmap_offsets
@@ -282,7 +287,9 @@ def encode_eblcHeader (num_strikes, stream):
 	stream.extend (struct.pack(">L", num_strikes)) # ULONG numSizes
 
 # http://www.microsoft.com/typography/otspec/eblc.htm
-def encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, stream):
+def encode_eblc (bitmap_offsets, image_format,
+		 font_metrics, strike_metrics,
+		 options, stream):
 	encode_eblcHeader (1, stream)
 	encode_eblc_bitmapSizeTable (bitmap_offsets,
 				     image_format,
@@ -386,11 +393,14 @@ def main (argv):
 
 	ebdt = bytearray ()
 	bitmap_offsets = encode_ebdt (encode_ebdt_image_func, glyph_imgs, glyphs,
-				      font_metrics, strike_metrics, ebdt)
+				      font_metrics, strike_metrics,
+				      options, ebdt)
 	print "EBDT table synthesized: %d bytes." % len (ebdt)
 
 	eblc = bytearray ()
-	encode_eblc (bitmap_offsets, image_format, font_metrics, strike_metrics, eblc)
+	encode_eblc (bitmap_offsets, image_format,
+		     font_metrics, strike_metrics,
+		     options, eblc)
 	print "EBLC table synthesized: %d bytes." % len (eblc)
 
 	add_font_table (font, 'CBDT', ebdt)
