@@ -3,8 +3,8 @@ PNGS = ./
 
 EMOJI_BUILDER = ../../emoji-builder.py
 
-%.ttf: %.sfd
-	python -c 'import fontforge; fontforge.open ("$<").generate ("$@")'
+%.ttf: %.ttx
+	ttx $<
 
 $(FONT).ttf: $(FONT).tmpl.ttf $(PNGS)*.png
 	$(EMOJI_BUILDER) $< $@ $(PNGS)
