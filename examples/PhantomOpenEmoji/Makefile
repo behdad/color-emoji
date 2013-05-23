@@ -7,7 +7,7 @@ UNI = ./uni
 PNGS = $(UNI)/uni
 
 EMOJI_BUILDER = ../../emoji-builder.py
-ADD_GLYPHS= ./add-glyphs.py
+ADD_GLYPHS= ../../add-glyphs.py
 
 %.ttx: %.ttx.tmpl $(ADD_GLYPHS) $(UNI)
 	$(ADD_GLYPHS)
