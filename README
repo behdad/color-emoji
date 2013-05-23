@@ -10,3 +10,6 @@ This project consists of the following bits and pieces:
     sources: FruityGirl and Funkster.  When combined using
     emoji-builder.py, these result in color fonts under this
     specification.
+
+  * Scripts to build a real color emoji font out of the Open Source
+    PhantomOpenEmoji images.
