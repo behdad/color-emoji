@@ -1,5 +1,5 @@
 FONT = Funkster
-PNGS = ./
+PNGS = ./png/
 
 EMOJI_BUILDER = ../../emoji-builder.py
 

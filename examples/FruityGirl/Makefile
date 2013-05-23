@@ -1,5 +1,5 @@
 FONT = FruityGirl
-PNGS = ./
+PNGS = ./png/
 
 EMOJI_BUILDER = ../../emoji-builder.py
 
