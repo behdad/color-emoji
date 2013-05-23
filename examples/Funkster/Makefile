@@ -7,7 +7,7 @@ EMOJI_BUILDER = ../../emoji-builder.py
 	@rm -f "$@"
 	ttx "$<"
 
-$(FONT).ttf: $(FONT).tmpl.ttf $(PNGS)*.png
+$(FONT).ttf: $(FONT).tmpl.ttf $(PNGS)*.png $(EMOJI_BUILDER)
 	$(EMOJI_BUILDER) $< "$@" $(PNGS)
 
 clean:
