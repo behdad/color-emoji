@@ -4,20 +4,20 @@ SRC = ./PhantomOpenEmoji
 PNG = ./png
 UNI = ./uni
 
-PNGS = $(UNI)/uni
+PNGS_PREFIX = $(UNI)/uni
 
 EMOJI_BUILDER = ../../emoji-builder.py
 ADD_GLYPHS= ../../add-glyphs.py
 
 %.ttx: %.ttx.tmpl $(ADD_GLYPHS) $(UNI)
-	$(ADD_GLYPHS)
+	$(ADD_GLYPHS) "$<" "$@" "$(PNGS_PREFIX)"
 
 %.ttf: %.ttx
 	@rm -f "$@"
 	ttx "$<"
 
 $(FONT).ttf: $(FONT).tmpl.ttf $(EMOJI_BUILDER)
-	$(EMOJI_BUILDER) $< "$@" "$(PNGS)"
+	$(EMOJI_BUILDER) -V $< "$@" "$(PNGS_PREFIX)"
 
 clean:
 	rm -rf $(FONT).ttf $(FONT).tmpl.ttf $(FONT).tmpl.ttx $(PNG) $(UNI)

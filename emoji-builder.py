@@ -444,7 +444,7 @@ def main (argv):
 		print >>sys.stderr, """
 Usage:
 
-emjoi-builder.py [-v] [-O] [-U] [-A] font.ttf out-font.ttf strike-prefix...
+emjoi-builder.py [-V] [-O] [-U] [-A] font.ttf out-font.ttf strike-prefix...
 
 This will search for files that have strike-prefix followed
 by a hex number, and end in ".png".  For example, if strike-prefix

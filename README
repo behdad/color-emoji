@@ -4,7 +4,7 @@ This project consists of the following bits and pieces:
     glyphs in OpenType fonts,
 
   * A tool called emoji-builder.py, to embed a set of PNG images into
-    an existing fonts,
+    an existing font,
 
   * Two sets of sample PNG images for A-Z characters and sample font
     sources: FruityGirl and Funkster.  When combined using

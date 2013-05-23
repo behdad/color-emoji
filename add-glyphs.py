@@ -1,11 +1,29 @@
 #!/usr/bin/python
 
-import glob
+import glob, sys
 from fontTools import ttx
 
-img_prefix = "uni/uni"
-out_file = "PhantomOpenEmoji.tmpl.ttx"
-in_file = out_file + ".tmpl"
+if len (sys.argv) < 4:
+	print >>sys.stderr, """
+Usage:
+
+add-glyphs.py [-v] [-O] [-U] [-A] font.ttx out-font.ttx strike-prefix...
+
+This will search for files that have strike-prefix followed
+by a hex number, and end in ".png".  For example, if strike-prefix
+is "icons/uni", then files with names like "icons/uni1f4A9.png" will
+be loaded.  The script then adds cmap and htmx entries for the Unicode
+characters found.  The metrics will be copied from the first existing
+glyph in the font.  If Unicode values outside the BMP are desired, the
+existing cmap table should be of the appropriate (format 12) type.
+Only the first cmap table is modified.
+"""
+	sys.exit (1)
+
+in_file = sys.argv[1]
+out_file = sys.argv[2]
+img_prefix = sys.argv[3]
+del sys.argv
 
 font = ttx.TTFont()
 font.importXML (in_file)

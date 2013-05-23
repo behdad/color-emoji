@@ -1,5 +1,5 @@
 FONT = FruityGirl
-PNGS = ./png/
+PNGS_PREFIX = ./png/
 
 EMOJI_BUILDER = ../../emoji-builder.py
 
@@ -7,8 +7,8 @@ EMOJI_BUILDER = ../../emoji-builder.py
 	@rm -f "$@"
 	ttx "$<"
 
-$(FONT).ttf: $(FONT).tmpl.ttf $(PNGS)*.png $(EMOJI_BUILDER)
-	$(EMOJI_BUILDER) $< "$@" $(PNGS)
+$(FONT).ttf: $(FONT).tmpl.ttf $(EMOJI_BUILDER) $(PNGS_PREFIX)*.png
+	$(EMOJI_BUILDER) -V $< "$@" $(PNGS_PREFIX)
 
 clean:
 	rm -f $(FONT).ttf $(FONT).tmpl.ttf
