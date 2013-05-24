@@ -340,7 +340,7 @@ class CBLC:
 		for gmap in glyph_maps[:-1]:
 			self.write (struct.pack(">L", gmap.offset - imageDataOffset)) # ULONG offsetArray
 			assert gmap.image_format == image_format
-		self.write (struct.pack(">L", glyph_maps[-1].offset))
+		self.write (struct.pack(">L", glyph_maps[-1].offset - imageDataOffset))
 
 	def write_bitmapSizeTable (self, glyph_maps):
 
