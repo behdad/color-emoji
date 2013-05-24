@@ -6,10 +6,8 @@ This project consists of the following bits and pieces:
   * A tool called emoji-builder.py, to embed a set of PNG images into
     an existing font,
 
-  * Two sets of sample PNG images for A-Z characters and sample font
-    sources: FruityGirl and Funkster.  When combined using
-    emoji-builder.py, these result in color fonts under this
-    specification.
+  * Two sets of sample PNG images for ASCII characters and sample
+    scripts to build them into test fonts: FruityGirl and Funkster.
 
   * Scripts to build a real color emoji font out of the Open Source
     PhantomOpenEmoji images.
