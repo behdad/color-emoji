@@ -2,6 +2,7 @@
 
 import glob, sys
 from fontTools import ttx
+from png import PNG
 
 if len (sys.argv) < 4:
 	print >>sys.stderr, """
@@ -13,8 +14,8 @@ This will search for files that have strike-prefix followed
 by a hex number, and end in ".png".  For example, if strike-prefix
 is "icons/uni", then files with names like "icons/uni1f4A9.png" will
 be loaded.  The script then adds cmap and htmx entries for the Unicode
-characters found.  The metrics will be copied from the first existing
-glyph in the font.  If Unicode values outside the BMP are desired, the
+characters found.  The advance width will be chosen based on image
+aspect ratio.  If Unicode values outside the BMP are desired, the
 existing cmap table should be of the appropriate (format 12) type.
 Only the first cmap table is modified.
 """
@@ -37,15 +38,19 @@ for img_file in glob.glob (glb):
 if not img_files:
 	raise Exception ("No image files found in '%s'." % glb)
 
+ascent = font['hhea'].ascent
+descent = -font['hhea'].descent
+
 g = font['GlyphOrder'].glyphOrder
 c = font['cmap'].tables[0].cmap
 h = font['hmtx'].metrics
-metrics = h[g[0]]
-for u in img_files.keys ():
+for (u, filename) in img_files.items ():
 	print "Adding glyph for U+%04X" % u
 	n = "uni%04x" % u
 	g.append (n)
 	c[u] = n
-	h[n] = metrics
+	(img_width, img_height) = PNG (filename).get_size ()
+	advance = int (round ((float (ascent+descent) * img_width / img_height)))
+	h[n] = [advance, 0]
 
 font.saveXML (out_file)
