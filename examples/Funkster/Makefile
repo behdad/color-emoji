@@ -1,8 +1,8 @@
 FONT = Funkster
 PNGS_PREFIX = ./png/
 
-EMOJI_BUILDER = ../../emoji-builder.py
-ADD_GLYPHS= ../../add-glyphs.py
+EMOJI_BUILDER = ../../emoji_builder.py
+ADD_GLYPHS= ../../add_glyphs.py
 
 %.ttx: %.ttx.tmpl $(ADD_GLYPHS) $(UNI)
 	$(ADD_GLYPHS) "$<" "$@" "$(PNGS_PREFIX)"
