@@ -356,7 +356,7 @@ def main (argv):
 		print >>sys.stderr, """
 Usage:
 
-emoji-builder.py [-V] [-O] [-U] [-A] font.ttf out-font.ttf strike-prefix...
+emoji_builder.py [-V] [-O] [-U] [-A] font.ttf out-font.ttf strike-prefix...
 
 This will search for files that have strike-prefix followed
 by a hex number, and end in ".png".  For example, if strike-prefix
