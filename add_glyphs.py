@@ -8,7 +8,7 @@ if len (sys.argv) < 4:
 	print >>sys.stderr, """
 Usage:
 
-add_glyphs.py [-v] [-O] [-U] [-A] font.ttx out-font.ttx strike-prefix...
+add_glyphs.py font.ttx out-font.ttx strike-prefix...
 
 This will search for files that have strike-prefix followed
 by a hex number, and end in ".png".  For example, if strike-prefix
