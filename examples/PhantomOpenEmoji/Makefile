@@ -34,7 +34,7 @@ $(SRC):
 $(PNG): $(SRC)
 	@echo "Generating PNGs..."
 	@mkdir -p "$(PNG)"
-	@for svg in "$(SRC)"/app/assets/images/poe/svg/*.svg; do \
+	@for svg in "$(SRC)"/emoji/*.svg; do \
 		base="`basename "$$svg"`"; \
 		emoji="$${base//.svg}"; \
 		echo "Generating $(PNG)/$$emoji.png"; \
@@ -44,7 +44,7 @@ $(PNG): $(SRC)
 $(UNI): $(SRC) $(PNG)
 	@echo "Generating symlinks..."
 	@mkdir -p "$(UNI)"
-	@cat "$(SRC)"/app/assets/javascripts/poe/index.json | \
+	@cat "$(SRC)"/poe.json | \
 	awk -F '"' ' \
 	/^{/		{name="";unicode="";next;} \
 	/"name"/	{name=$$4;next;} \
