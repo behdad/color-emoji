@@ -28,7 +28,7 @@ Support for this format was included in FreeType in May 2013.  Support
 has also been included in Fontconfig, as well Skia graphics library.
 A proof-of-concept patchset for the Cairo graphics library to use
 fallback software rendering for the Xlib backend with support for color
-glyphs is at http://github.com/behdad/cairo
+glyphs is at https://github.com/behdad/cairo/tree/color-emoji
 
 Currently, Android, ChromeOS, Chrome Linux, as well as certain versions
 of Firefox support rendering fonts built using this format.
