@@ -11,3 +11,29 @@ This project consists of the following bits and pieces:
 
   * Scripts to build a real color emoji font out of the Open Source
     PhantomOpenEmoji images.
+
+Discussions about this work happen at:
+
+  https://groups.google.com/forum/#!forum/color-emoji
+
+Here is the version 1 of the spec:
+
+  https://rawgit.com/behdad/color-emoji/master/specification/v1.html
+
+Here is the announcement:
+
+  http://google-opensource.blogspot.com/2013/05/open-standard-color-font-fun-for.html
+
+Support for this format was included in FreeType in May 2013.  Support
+has also been included in Fontconfig, as well Skia graphics library.
+A proof-of-concept patchset for the Cairo graphics library to use
+fallback software rendering for the Xlib backend with support for color
+glyphs is at http://github.com/behdad/cairo
+
+Currently, Android, ChromeOS, Chrome Linux, as well as certain versions
+of Firefox support rendering fonts built using this format.
+
+This format is now part of OpenType specification, version 1.7:
+
+  http://www.microsoft.com/typography/otspec/cbdt.htm
+  http://www.microsoft.com/typography/otspec/cblc.htm
