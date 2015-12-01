@@ -1,3 +1,4 @@
+SHELL=/bin/bash
 FONT = FruityGirl
 PNGS_PREFIX = ./png/
 

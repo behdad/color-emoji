@@ -1,3 +1,4 @@
+SHELL=/bin/bash
 FONT = PhantomOpenEmoji
 
 SRC = ./PhantomOpenEmoji

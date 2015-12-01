@@ -1,3 +1,4 @@
+SHELL=/bin/bash
 FONT = Funkster
 PNGS_PREFIX = ./png/
 
